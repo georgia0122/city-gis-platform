@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>City GIS Weather Decision Platform</title>
+
+  <!-- Leaflet (地图) -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+
+  <!-- 你自己的样式 -->
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">GeoWeather</div>
+    <div style="margin-left: auto; display: flex; gap: 20px; align-items: flex-start;">
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <a href="/" style="color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.2); border-radius: 4px; transition: background 0.3s; display: block; text-align: center;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">🏠</a>
+        <span style="color: #333; font-size: 11px; margin-top: 4px; white-space: nowrap; font-weight: 500;">地图主页</span>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <a href="/alerts" style="color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.2); border-radius: 4px; transition: background 0.3s; display: block; text-align: center;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">🚨</a>
+        <span style="color: #333; font-size: 11px; margin-top: 4px; white-space: nowrap; font-weight: 500;">预警中心</span>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: center;">
+        <a href="/profile" style="color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.2); border-radius: 4px; transition: background 0.3s; display: block; text-align: center;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">👤</a>
+        <span style="color: #333; font-size: 11px; margin-top: 4px; white-space: nowrap; font-weight: 500;">个人中心</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <!-- 搜索栏 -->
+    <div id="searchBox" style="position: absolute; top: 80px; left: 20px; z-index: 1000; background: white; padding: 12px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); min-width: 320px;">
+      <input 
+        type="text" 
+        id="searchInput" 
+        placeholder="搜索任意城市或地点..." 
+        style="width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; box-sizing: border-box;"
+      />
+      <div id="searchResults" style="margin-top: 8px; max-height: 350px; overflow-y: auto;"></div>
+      <div id="searchLoading" style="display: none; padding: 8px; text-align: center; color: #666;">
+        <span>🔍 搜索中...</span>
+      </div>
+    </div>
+
+    <div id="map" class="map"></div>
+
+    <div class="panel">
+      <!-- 预警快捷卡片 -->
+      <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; cursor: pointer; transition: transform 0.2s;" onclick="window.location.href='/alerts'" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform='translateY(0)'">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <div style="font-size: 32px;">🚨</div>
+          <div style="flex: 1;">
+            <div style="font-size: 18px; font-weight: 600; margin-bottom: 4px;">预警中心</div>
+            <div id="alertCount" style="font-size: 13px; opacity: 0.9;">加载中...</div>
+          </div>
+          <div style="font-size: 24px; opacity: 0.8;">→</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">地点详情</div>
+        <div id="placeName" class="place-name">尚未选择地点</div>
+        <div class="row">
+          <div class="pill">推荐：<span id="recText">—</span></div>
+          <div class="pill">雨概率：<span id="rainText">—</span></div>
+        </div>
+        <button id="btnAdvice" class="btn" disabled>生成出行建议</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">未来 24 小时趋势</div>
+        <div id="chart" class="chart"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">AI 建议</div>
+        <div id="adviceBox" class="advice">选择地点后点击“生成出行建议”。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- ECharts（图表） -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+  <!-- 你的前端逻辑 -->
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
