@@ -271,9 +271,9 @@
 
     <div class="profile-header">
       <div class="profile-avatar">👤</div>
-      <h1>张三</h1>
+      <h1>{{ user.username }}</h1>
       <p>天津气象决策平台用户</p>
-      <p>会员等级: 普通用户 | 注册时间: 2024-12-01</p>
+      <p>会员等级: 普通用户 | 注册时间: {{ user.created_at[:10] if user.created_at else '未知' }}</p>
     </div>
 
     <div class="profile-grid">
@@ -304,11 +304,11 @@
         <div class="profile-info">
           <div class="info-item">
             <span class="info-label">用户名</span>
-            <span class="info-value">zhangsan</span>
+            <span class="info-value">{{ user.username }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">邮箱</span>
-            <span class="info-value">zhang@example.com</span>
+            <span class="info-value">{{ user.email or '未设置' }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">城市</span>
@@ -393,17 +393,17 @@
         </div>
       </div>
       <div class="btn-group">
-        <button class="btn-edit" onclick="alert('修改密码功能开发中...')">修改密码</button>
-        <button class="btn-edit" onclick="alert('两步验证功能开发中...')">两步验证</button>
+        <button class="btn-edit" onclick="showChangePasswordModal()">🔒 修改密码</button>
+        <button class="btn-edit" onclick="showEditProfileModal()">✏️ 编辑信息</button>
       </div>
     </div>
 
     <div class="settings-section">
       <h2>💾 数据管理</h2>
       <div class="btn-group">
-        <button class="btn-edit" onclick="alert('导出数据功能开发中...')">📥 导出我的数据</button>
-        <button class="btn-edit" onclick="alert('下载报告功能开发中...')">📊 下载使用报告</button>
-        <button class="btn-logout" onclick="alert('删除账户功能开发中...')">🗑️ 删除账户</button>
+        <button class="btn-edit" onclick="exportUserData()">📥 导出我的数据</button>
+        <button class="btn-edit" onclick="downloadReport()">📊 下载使用报告</button>
+        <button class="btn-logout" onclick="deleteAccount()">🗑️ 删除账户</button>
       </div>
     </div>
 
@@ -415,11 +415,206 @@
     </div>
   </div>
 
+  <!-- 修改密码模态框 -->
+  <div id="changePasswordModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 30px; border-radius: 12px; max-width: 400px; width: 90%;">
+      <h2 style="margin: 0 0 20px 0; color: #1f2937;">修改密码</h2>
+      <form id="changePasswordForm">
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 5px; color: #6b7280; font-weight: 500;">当前密码</label>
+          <input type="password" id="currentPassword" required style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+        </div>
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 5px; color: #6b7280; font-weight: 500;">新密码</label>
+          <input type="password" id="newPassword" required minlength="6" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+        </div>
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; margin-bottom: 5px; color: #6b7280; font-weight: 500;">确认新密码</label>
+          <input type="password" id="confirmPassword" required minlength="6" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+        </div>
+        <div class="btn-group">
+          <button type="submit" class="btn-edit">确认修改</button>
+          <button type="button" class="btn-logout" onclick="closeChangePasswordModal()">取消</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- 编辑个人信息模态框 -->
+  <div id="editProfileModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 10000; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 30px; border-radius: 12px; max-width: 400px; width: 90%;">
+      <h2 style="margin: 0 0 20px 0; color: #1f2937;">编辑个人信息</h2>
+      <form id="editProfileForm">
+        <div style="margin-bottom: 15px;">
+          <label style="display: block; margin-bottom: 5px; color: #6b7280; font-weight: 500;">邮箱</label>
+          <input type="email" id="editEmail" value="{{ user.email or '' }}" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+        </div>
+        <div style="margin-bottom: 20px;">
+          <label style="display: block; margin-bottom: 5px; color: #6b7280; font-weight: 500;">姓名</label>
+          <input type="text" id="editFullName" value="{{ user.full_name or '' }}" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box;">
+        </div>
+        <div class="btn-group">
+          <button type="submit" class="btn-edit">保存修改</button>
+          <button type="button" class="btn-logout" onclick="closeEditProfileModal()">取消</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
+    // 修改密码模态框
+    function showChangePasswordModal() {
+      document.getElementById('changePasswordModal').style.display = 'flex';
+    }
+
+    function closeChangePasswordModal() {
+      document.getElementById('changePasswordModal').style.display = 'none';
+      document.getElementById('changePasswordForm').reset();
+    }
+
+    document.getElementById('changePasswordForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const currentPassword = document.getElementById('currentPassword').value;
+      const newPassword = document.getElementById('newPassword').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+
+      if (newPassword !== confirmPassword) {
+        alert('两次输入的新密码不一致！');
+        return;
+      }
+
+      if (newPassword.length < 6) {
+        alert('新密码至少需要6个字符！');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword, newPassword })
+        });
+
+        const result = await response.json();
+        
+        if (response.ok) {
+          alert('密码修改成功！');
+          closeChangePasswordModal();
+        } else {
+          alert(result.detail || '修改失败，请检查当前密码是否正确');
+        }
+      } catch (error) {
+        alert('修改失败：' + error.message);
+      }
+    });
+
+    // 编辑个人信息模态框
+    function showEditProfileModal() {
+      document.getElementById('editProfileModal').style.display = 'flex';
+    }
+
+    function closeEditProfileModal() {
+      document.getElementById('editProfileModal').style.display = 'none';
+    }
+
+    document.getElementById('editProfileForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('editEmail').value;
+      const fullName = document.getElementById('editFullName').value;
+
+      try {
+        const response = await fetch('/api/update-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, full_name: fullName })
+        });
+
+        const result = await response.json();
+        
+        if (response.ok) {
+          alert('信息修改成功！');
+          location.reload();
+        } else {
+          alert(result.detail || '修改失败');
+        }
+      } catch (error) {
+        alert('修改失败：' + error.message);
+      }
+    });
+
+    // 导出数据
+    async function exportUserData() {
+      if (!confirm('确认导出您的所有数据吗？')) return;
+
+      try {
+        const response = await fetch('/api/export-data');
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'my_data_' + new Date().toISOString().split('T')[0] + '.json';
+          a.click();
+          window.URL.revokeObjectURL(url);
+        } else {
+          alert('导出失败');
+        }
+      } catch (error) {
+        alert('导出失败：' + error.message);
+      }
+    }
+
+    // 下载报告
+    async function downloadReport() {
+      if (!confirm('确认下载使用报告吗？')) return;
+
+      try {
+        const response = await fetch('/api/usage-report');
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'usage_report_' + new Date().toISOString().split('T')[0] + '.pdf';
+          a.click();
+          window.URL.revokeObjectURL(url);
+        } else {
+          alert('下载失败');
+        }
+      } catch (error) {
+        alert('下载失败：' + error.message);
+      }
+    }
+
+    // 删除账户
+    async function deleteAccount() {
+      if (!confirm('警告：删除账户将永久删除您的所有数据，此操作不可恢复！\n\n确认要删除账户吗？')) return;
+      
+      const confirmText = prompt('请输入您的用户名以确认删除：');
+      if (confirmText !== '{{ user.username }}') {
+        alert('用户名不匹配，操作已取消');
+        return;
+      }
+
+      try {
+        const response = await fetch('/api/delete-account', {
+          method: 'DELETE'
+        });
+
+        if (response.ok) {
+          alert('账户已删除');
+          window.location.href = '/login';
+        } else {
+          alert('删除失败');
+        }
+      } catch (error) {
+        alert('删除失败：' + error.message);
+      }
+    }
+
     function handleLogout() {
       if (confirm('确认要登出吗？')) {
-        alert('登出成功！');
-        window.location.href = '/';
+        window.location.href = '/logout';
       }
     }
 

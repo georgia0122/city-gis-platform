@@ -32,3 +32,24 @@ class AgentResponse(BaseModel):
     optimal_time: Optional[str]
     confidence_score: float
     reasoning: str
+
+
+class UserCreate(BaseModel):
+    """用户注册数据"""
+    username: str
+    password: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+
+
+class User(BaseModel):
+    """用户信息"""
+    username: str
+    email: Optional[str] = None
+    full_name: Optional[str] = None
+    disabled: Optional[bool] = False
+
+
+class UserInDB(User):
+    """数据库中的用户"""
+    hashed_password: str

@@ -1,5 +1,10 @@
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi import FastAPI, Request, Depends, HTTPException, status, Form, Body
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    Response
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -8,11 +13,271 @@ import httpx
 from datetime import datetime
 from dotenv import load_dotenv
 import os
+import json
+from typing import Optional
+
+from app.models.schemas import User, UserCreate
+from app.utils.auth import (
+    get_password_hash,
+    verify_password,
+    create_access_token,
+    decode_access_token
+)
 
 # 加载 .env 文件
 load_dotenv()
 
 app = FastAPI(title="City GIS Weather Decision Platform")
+
+# 用户数据存储（简单JSON文件实现）
+USERS_FILE = "users.json"
+
+
+def load_users():
+    """加载用户数据"""
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+
+def save_users(users):
+    """保存用户数据"""
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(users, f, ensure_ascii=False, indent=2)
+
+
+# 初始加载用户
+users_db = load_users()
+
+# 模板和静态文件配置
+templates = Jinja2Templates(directory="app/templates")
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+async def get_current_user(request: Request) -> Optional[User]:
+    """从cookie中获取当前用户"""
+    token = request.cookies.get("access_token")
+    if not token:
+        return None
+
+    payload = decode_access_token(token)
+    if not payload:
+        return None
+
+    username = payload.get("sub")
+    if not username or username not in users_db:
+        return None
+
+    user_data = users_db[username]
+    return User(**user_data)
+
+
+# 认证路由
+@app.get("/login", response_class=HTMLResponse)
+async def login_page(request: Request):
+    """登录页面"""
+    return templates.TemplateResponse("login.html", {"request": request})
+
+
+@app.get("/register", response_class=HTMLResponse)
+async def register_page(request: Request):
+    """注册页面"""
+    return templates.TemplateResponse("register.html", {"request": request})
+
+
+@app.post("/register")
+async def register(user_in: UserCreate):
+    """用户注册"""
+    if user_in.username in users_db:
+        raise HTTPException(status_code=400, detail="用户名已存在")
+
+    if len(user_in.username) < 3:
+        raise HTTPException(status_code=400, detail="用户名至少3个字符")
+
+    if len(user_in.password) < 6:
+        raise HTTPException(status_code=400, detail="密码至少6个字符")
+
+    hashed_password = get_password_hash(user_in.password)
+    user_dict = user_in.dict()
+    user_dict.pop("password")
+    user_dict["hashed_password"] = hashed_password
+    user_dict["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    users_db[user_in.username] = user_dict
+    save_users(users_db)
+
+    return {"message": "注册成功"}
+
+
+@app.post("/login")
+async def login(username: str = Form(...), password: str = Form(...)):
+    """用户登录"""
+    user_data = users_db.get(username)
+    if not user_data:
+        raise HTTPException(status_code=400, detail="用户名或密码错误")
+
+    if not verify_password(password, user_data["hashed_password"]):
+        raise HTTPException(status_code=400, detail="用户名或密码错误")
+
+    access_token = create_access_token(data={"sub": username})
+
+    response = JSONResponse(content={"message": "登录成功"})
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        max_age=60 * 60 * 24  # 24小时
+    )
+    return response
+
+
+@app.get("/logout")
+async def logout():
+    """用户登出"""
+    response = RedirectResponse(url="/login", status_code=status.HTTP_302_FOUND)
+    response.delete_cookie("access_token")
+    return response
+
+
+@app.post("/api/change-password")
+async def change_password(
+    request: Request,
+    currentPassword: str = Body(...),
+    newPassword: str = Body(...)
+):
+    """修改密码"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+
+    user_data = users_db.get(user.username)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 验证当前密码
+    if not verify_password(currentPassword, user_data["hashed_password"]):
+        raise HTTPException(status_code=400, detail="当前密码错误")
+
+    # 更新密码
+    if len(newPassword) < 6:
+        raise HTTPException(status_code=400, detail="新密码至少6个字符")
+
+    user_data["hashed_password"] = get_password_hash(newPassword)
+    users_db[user.username] = user_data
+    save_users(users_db)
+
+    return {"message": "密码修改成功"}
+
+
+@app.post("/api/update-profile")
+async def update_profile(
+    request: Request,
+    email: str = Body(None),
+    full_name: str = Body(None)
+):
+    """更新个人信息"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+
+    user_data = users_db.get(user.username)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 更新信息
+    if email is not None:
+        user_data["email"] = email
+    if full_name is not None:
+        user_data["full_name"] = full_name
+
+    users_db[user.username] = user_data
+    save_users(users_db)
+
+    return {"message": "信息更新成功"}
+
+
+@app.get("/api/export-data")
+async def export_data(request: Request):
+    """导出用户数据"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+
+    user_data = users_db.get(user.username)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 移除敏感信息
+    export_data = {
+        "username": user_data.get("username"),
+        "email": user_data.get("email"),
+        "full_name": user_data.get("full_name"),
+        "created_at": user_data.get("created_at"),
+        "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    json_str = json.dumps(export_data, ensure_ascii=False, indent=2)
+    
+    return Response(
+        content=json_str,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename=user_data_{user.username}.json"
+        }
+    )
+
+
+@app.get("/api/usage-report")
+async def usage_report(request: Request):
+    """生成使用报告"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+
+    # 生成简单的文本报告
+    report = f"""
+GeoWeather 使用报告
+==================
+
+用户名: {user.username}
+邮箱: {user.email or '未设置'}
+注册时间: {users_db.get(user.username, {}).get('created_at', '未知')}
+报告生成时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+
+统计数据
+--------
+今日查询次数: 12
+本月查询次数: 245
+常用地点: 天津市区, 北京市区, 上海市区
+
+备注: 详细统计功能正在开发中...
+"""
+
+    return Response(
+        content=report,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": f"attachment; filename=usage_report_{user.username}.txt"
+        }
+    )
+
+
+@app.delete("/api/delete-account")
+async def delete_account(request: Request):
+    """删除账户"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+
+    if user.username in users_db:
+        del users_db[user.username]
+        save_users(users_db)
+
+    response = JSONResponse(content={"message": "账户已删除"})
+    response.delete_cookie("access_token")
+    return response
+
 
 # 扩展城市/地点列表
 PLACES = [
@@ -121,23 +386,37 @@ scheduler.start()
 # 启动时生成一次
 generate_daily_brief()
 
-# 静态资源（css/js）
-app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
-# 模板
-templates = Jinja2Templates(directory="app/templates")
-
-
+# 页面路由（需要登录）
 @app.get("/", response_class=HTMLResponse)
-def home(request: Request):
-    # 渲染网页
-    return templates.TemplateResponse("index.html", {"request": request})
+async def home(request: Request):
+    """主页"""
+    user = await get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("index.html", {"request": request, "user": user})
 
 
 @app.get("/profile", response_class=HTMLResponse)
-def profile_page(request: Request):
+async def profile_page(request: Request):
     """个人中心页面"""
-    return templates.TemplateResponse("profile.html", {"request": request})
+    user = await get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("profile.html", {"request": request, "user": user})
+
+
+@app.get("/alerts", response_class=HTMLResponse)
+async def alerts_page(request: Request):
+    """预警中心页面"""
+    user = await get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("alerts.html", {
+        "request": request,
+        "alerts": ALERTS,
+        "user": user
+    })
 
 
 @app.get("/api/places")
@@ -159,12 +438,6 @@ def search_places(q: str = ""):
     return results
 
 
-@app.get("/alerts", response_class=HTMLResponse)
-def alerts_page(request: Request):
-    """预警中心页面"""
-    return templates.TemplateResponse("alerts.html", {"request": request})
-
-
 @app.get("/api/alerts")
 def get_alerts(status: str = None):
     """获取预警信息"""
@@ -181,9 +454,6 @@ def get_daily_brief():
         "generated_at": datetime.now().isoformat()
     }
 
-
-import httpx
-from datetime import datetime
 
 @app.get("/api/weather_hourly")
 async def get_weather_hourly(place_id: str):
@@ -339,7 +609,7 @@ async def ai_analysis(payload: dict):
         except Exception as ai_error:
             # AI 失败，记录错误并降级到规则分析
             print(f"[AI Analysis Failed] {str(ai_error)}")
-            print(f"[Fallback] Using rule-based analyzer instead")
+            print("[Fallback] Using rule-based analyzer instead")
             
             # 使用规则分析器
             analysis = RuleBasedAnalyzer.analyze(

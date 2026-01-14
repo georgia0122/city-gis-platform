@@ -5,7 +5,6 @@ LLM 调用封装层
 
 import json
 import os
-from typing import Optional
 
 
 class LLMProvider:
@@ -70,7 +69,9 @@ class DeepSeekProvider(LLMProvider):
             raise ImportError("Please install openai: pip install openai")
         
         if not self.deepseek_api_key:
-            raise ValueError("DEEPSEEK_API_KEY environment variable is not set")
+            raise ValueError(
+                "DEEPSEEK_API_KEY environment variable is not set"
+            )
         
         # DeepSeek 使用 OpenAI 兼容的 API，但需要不同的 base_url
         client = AsyncOpenAI(
@@ -93,7 +94,6 @@ class DeepSeekProvider(LLMProvider):
             return response.choices[0].message.content
         except Exception as e:
             raise RuntimeError(f"DeepSeek API call failed: {str(e)}")
-
 
 
 class MockLLMProvider(LLMProvider):

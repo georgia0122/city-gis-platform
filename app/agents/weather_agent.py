@@ -4,7 +4,6 @@
 """
 
 import json
-from typing import Dict, Any
 from app.models.schemas import WeatherData, AgentResponse
 from app.utils.llm import get_llm_provider
 
@@ -69,9 +68,15 @@ class WeatherAgent:
             current_temp=round(weather_data.current_temp, 1),
             rain_probability=round(weather_data.rain_probability * 100),
             wind_speed=round(weather_data.wind_speed, 1),
-            hourly_temps=", ".join([f"{t:.1f}" for t in weather_data.hourly_temps[:6]]),  # 前6小时
-            hourly_rain_probs=", ".join([f"{p*100:.0f}%" for p in weather_data.hourly_rain_probs[:6]]),
-            hourly_winds=", ".join([f"{w:.1f}" for w in weather_data.hourly_winds[:6]])
+            hourly_temps=", ".join(
+                [f"{t:.1f}" for t in weather_data.hourly_temps[:6]]
+            ),
+            hourly_rain_probs=", ".join(
+                [f"{p*100:.0f}%" for p in weather_data.hourly_rain_probs[:6]]
+            ),
+            hourly_winds=", ".join(
+                [f"{w:.1f}" for w in weather_data.hourly_winds[:6]]
+            )
         )
     
     async def analyze(self, weather_data: WeatherData) -> AgentResponse:
@@ -89,34 +94,44 @@ class WeatherAgent:
             user_prompt = self.prepare_prompt(weather_data)
             
             # 2. 调用LLM
-            llm_response = await self.llm_provider.call(SYSTEM_PROMPT, user_prompt)
+            llm_response = await self.llm_provider.call(
+                SYSTEM_PROMPT, user_prompt
+            )
             
             # 3. 解析JSON响应
             response_data = json.loads(llm_response)
             
             # 4. 转换为AgentResponse
             agent_response = AgentResponse(
-                recommendation=response_data.get("recommendation", "GO"),
+                recommendation=response_data.get(
+                    "recommendation", "GO"
+                ),
                 summary=response_data.get("summary", ""),
                 risks=[
                     {
                         "risk_type": r.get("risk_type", "UNKNOWN"),
                         "severity": r.get("severity", "LOW"),
-                        "confidence": float(r.get("confidence", 0.5)),
+                        "confidence": float(
+                            r.get("confidence", 0.5)
+                        ),
                         "evidence": r.get("evidence", "")
                     }
                     for r in response_data.get("risks", [])
                 ],
                 suggestions=response_data.get("suggestions", []),
                 optimal_time=response_data.get("optimal_time"),
-                confidence_score=float(response_data.get("confidence_score", 0.5)),
+                confidence_score=float(
+                    response_data.get("confidence_score", 0.5)
+                ),
                 reasoning=response_data.get("reasoning", "")
             )
             
             return agent_response
             
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse LLM response as JSON: {str(e)}")
+            raise ValueError(
+                f"Failed to parse LLM response as JSON: {str(e)}"
+            )
         except Exception as e:
             raise RuntimeError(f"Weather analysis failed: {str(e)}")
 
