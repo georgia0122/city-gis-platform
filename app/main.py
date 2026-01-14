@@ -295,82 +295,16 @@ PLACES = [
 
 PLACE_BY_ID = {p["id"]: p for p in PLACES}
 
-# 预警数据存储（模拟）
-ALERTS = [
-    {
-        "id": "alert001",
-        "type": "暴雨预警",
-        "level": "橙色",
-        "location": "天津市区",
-        "description": "预计未来6小时内部分地区将出现暴雨，累计降雨量50-80毫米。",
-        "time": "2026-01-12 08:00",
-        "status": "active"
-    },
-    {
-        "id": "alert002",
-        "type": "大风预警",
-        "level": "黄色",
-        "location": "北京市区",
-        "description": "预计未来12小时内阵风可达7-8级。",
-        "time": "2026-01-12 09:30",
-        "status": "active"
-    },
-    {
-        "id": "alert003",
-        "type": "高温预警",
-        "level": "黄色",
-        "location": "上海市区",
-        "description": "预计未来3天最高气温将达到35-37℃。",
-        "time": "2026-01-11 14:00",
-        "status": "expired"
-    }
-]
+# 日报简报存储（已废弃，改用AI实时生成）
+daily_brief_text = "请访问预警中心查看AI实时生成的气象简报"
 
-# 日报简报存储
-daily_brief_text = "系统初始化中，首次简报将在每日凌晨生成。"
-
-PLACE_BY_ID = {p["id"]: p for p in PLACES}
-
-# 定时任务：每天生成日报简报
+# 定时任务：每天生成日报简报（保留用于向后兼容）
 def generate_daily_brief():
     global daily_brief_text
     now = datetime.now()
-    
-    # 模拟生成简报内容
-    active_alerts = [a for a in ALERTS if a["status"] == "active"]
-    alert_summary = f"当前有 {len(active_alerts)} 条活跃预警" if active_alerts else "暂无活跃预警"
-    
-    brief = f"""
-=== 气象决策平台日报简报 ===
-生成时间: {now.strftime('%Y-%m-%d %H:%M:%S')}
-
-一、预警概况
-{alert_summary}
-"""
-    
-    if active_alerts:
-        brief += "\n活跃预警列表:\n"
-        for alert in active_alerts[:5]:  # 最多显示5条
-            brief += f"  - [{alert['level']}] {alert['type']}: {alert['location']}\n"
-    
-    brief += f"""
-二、城市监控
-当前监控城市数量: {len(PLACES)} 个
-覆盖区域: 京津冀、长三角、珠三角及成都等重点城市
-
-三、系统状态
-服务运行正常，所有API接口响应正常。
-
-四、建议
-1. 关注活跃预警区域的天气变化
-2. 及时更新出行计划
-3. 查看各地点的24小时趋势图获取详细信息
-
---- 本简报由系统自动生成 ---
-"""
-    
-    daily_brief_text = brief
+    daily_brief_text = f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] 请访问预警中心查看AI实时生成的气象简报"
     print(f"[SCHEDULED] Daily brief generated at {now}")
+
 
 # 初始化定时任务
 scheduler = BackgroundScheduler()
@@ -414,7 +348,6 @@ async def alerts_page(request: Request):
         return RedirectResponse(url="/login")
     return templates.TemplateResponse("alerts.html", {
         "request": request,
-        "alerts": ALERTS,
         "user": user
     })
 
@@ -438,20 +371,107 @@ def search_places(q: str = ""):
     return results
 
 
-@app.get("/api/alerts")
-def get_alerts(status: str = None):
-    """获取预警信息"""
-    if status:
-        return [a for a in ALERTS if a["status"] == status]
-    return ALERTS
-
-
 @app.get("/api/daily_brief")
 def get_daily_brief():
-    """获取日报简报"""
+    """获取日报简报（已废弃）"""
     return {
         "content": daily_brief_text,
         "generated_at": datetime.now().isoformat()
+    }
+
+
+@app.get("/api/weather")
+async def get_weather(lat: float, lng: float):
+    """获取实时天气数据"""
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lng,
+        "current": "temperature_2m,precipitation,wind_speed_10m",
+        "hourly": "temperature_2m,precipitation_probability,wind_speed_10m",
+        "timezone": "Asia/Shanghai",
+        "forecast_days": 1
+    }
+    
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, params=params, timeout=10.0)
+        data = resp.json()
+    
+    current = data.get("current", {})
+    hourly = data.get("hourly", {})
+    
+    return {
+        "current_temp": current.get("temperature_2m", 0),
+        "rain_probability": current.get("precipitation", 0) / 100,
+        "wind_speed": current.get("wind_speed_10m", 0),
+        "hourly_temps": hourly.get("temperature_2m", [])[:24],
+        "hourly_rain_probs": [p / 100 for p in hourly.get("precipitation_probability", [])[:24]],
+        "hourly_winds": hourly.get("wind_speed_10m", [])[:24]
+    }
+
+
+@app.get("/api/ai-brief")
+async def get_ai_brief(lat: float, lng: float, city: str):
+    """获取AI气象简报"""
+    from app.models.schemas import WeatherData
+    from app.agents.rule_based_analyzer import RuleBasedAnalyzer
+    from app.utils.llm import get_llm_provider
+    
+    # 获取天气数据
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lng,
+        "current": "temperature_2m,precipitation,wind_speed_10m",
+        "hourly": "temperature_2m,precipitation_probability,wind_speed_10m",
+        "timezone": "Asia/Shanghai",
+        "forecast_days": 1
+    }
+    
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, params=params, timeout=10.0)
+        data = resp.json()
+    
+    current = data.get("current", {})
+    hourly = data.get("hourly", {})
+    
+    weather_data = WeatherData(
+        place_name=city,
+        city=city,
+        current_temp=current.get("temperature_2m", 0),
+        rain_probability=current.get("precipitation", 0) / 100,
+        wind_speed=current.get("wind_speed_10m", 0),
+        hourly_temps=hourly.get("temperature_2m", [])[:24],
+        hourly_rain_probs=[p / 100 for p in hourly.get("precipitation_probability", [])[:24]],
+        hourly_winds=hourly.get("wind_speed_10m", [])[:24],
+        current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+    
+    # 尝试使用AI分析，失败则使用规则分析
+    try:
+        llm_provider = get_llm_provider()
+        from app.agents.weather_agent import WeatherAgent
+        agent = WeatherAgent()
+        result = await agent.analyze(weather_data)
+    except Exception as e:
+        print(f"AI分析失败，使用规则分析: {e}")
+        analyzer = RuleBasedAnalyzer()
+        result = analyzer.analyze(
+            weather_data.place_name,
+            weather_data.current_temp,
+            weather_data.rain_probability,
+            weather_data.wind_speed,
+            weather_data.hourly_temps,
+            weather_data.hourly_rain_probs,
+            weather_data.hourly_winds
+        )
+    
+    return {
+        "summary": result.summary,
+        "recommendation": result.recommendation,
+        "optimal_time": result.optimal_time,
+        "suggestions": result.suggestions,
+        "confidence_score": result.confidence_score
     }
 
 

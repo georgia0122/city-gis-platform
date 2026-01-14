@@ -3,15 +3,21 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
-  <title>预警中心 - City GIS Weather Decision Platform</title>
+  <title>预警中心 - GeoWeather</title>
   <link rel="stylesheet" href="/static/css/style.css" />
+  <!-- ECharts for charts -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
   <style>
+    body {
+      background: #f5f7fa;
+      margin: 0;
+      padding: 0;
+    }
     .alerts-container {
-      max-width: 1200px;
+      max-width: 1400px;
       margin: 0 auto;
       padding: 20px;
     }
-    
     .alerts-header {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
@@ -20,357 +26,674 @@
       margin-bottom: 30px;
       box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
-    
     .alerts-header h1 {
       margin: 0 0 10px 0;
       font-size: 32px;
     }
-    
-    .alerts-header p {
-      margin: 0;
+    .section-card {
+      background: white;
+      border-radius: 12px;
+      padding: 25px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .section-title {
+      font-size: 20px;
+      font-weight: 600;
+      color: #1f2937;
+      margin: 0 0 20px 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .chart-container {
+      width: 100%;
+      height: 400px;
+      margin-top: 15px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .stat-box {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 5px;
+    }
+    .stat-label {
+      font-size: 14px;
       opacity: 0.9;
     }
-    
-    .filter-tabs {
+    .alert-item {
+      background: #fff;
+      border-left: 4px solid #ddd;
+      padding: 15px;
+      margin-bottom: 10px;
+      border-radius: 6px;
+      transition: transform 0.2s;
+    }
+    .alert-item:hover {
+      transform: translateX(5px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .alert-item.high {
+      border-left-color: #ef4444;
+      background: #fef2f2;
+    }
+    .alert-item.medium {
+      border-left-color: #f59e0b;
+      background: #fffbeb;
+    }
+    .alert-item.low {
+      border-left-color: #3b82f6;
+      background: #eff6ff;
+    }
+    .alert-title {
+      font-weight: 600;
+      color: #1f2937;
+      margin-bottom: 5px;
+    }
+    .alert-desc {
+      color: #6b7280;
+      font-size: 14px;
+    }
+    .city-selector {
       display: flex;
       gap: 10px;
       margin-bottom: 20px;
+      flex-wrap: wrap;
     }
-    
-    .filter-tab {
+    .city-btn {
       padding: 10px 20px;
       background: white;
-      border: 2px solid #ddd;
-      border-radius: 6px;
+      border: 2px solid #e5e7eb;
+      border-radius: 8px;
       cursor: pointer;
       font-weight: 500;
       transition: all 0.3s;
     }
-    
-    .filter-tab:hover {
+    .city-btn:hover {
       border-color: #667eea;
     }
-    
-    .filter-tab.active {
+    .city-btn.active {
       background: #667eea;
       color: white;
       border-color: #667eea;
     }
-    
-    .alert-card {
-      background: white;
-      border-radius: 10px;
-      padding: 20px;
-      margin-bottom: 15px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-      border-left: 5px solid #ddd;
-      transition: transform 0.2s, box-shadow 0.2s;
-    }
-    
-    .alert-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
-    }
-    
-    .alert-card.level-red {
-      border-left-color: #ef4444;
-    }
-    
-    .alert-card.level-orange {
-      border-left-color: #f97316;
-    }
-    
-    .alert-card.level-yellow {
-      border-left-color: #eab308;
-    }
-    
-    .alert-card.level-blue {
-      border-left-color: #3b82f6;
-    }
-    
-    .alert-card.expired {
-      opacity: 0.6;
-    }
-    
-    .alert-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: start;
-      margin-bottom: 12px;
-    }
-    
-    .alert-type {
-      font-size: 20px;
-      font-weight: 600;
-      color: #1f2937;
-    }
-    
-    .alert-level {
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 13px;
-      font-weight: 600;
-    }
-    
-    .alert-level.red {
-      background: #fee2e2;
-      color: #991b1b;
-    }
-    
-    .alert-level.orange {
-      background: #ffedd5;
-      color: #9a3412;
-    }
-    
-    .alert-level.yellow {
-      background: #fef3c7;
-      color: #854d0e;
-    }
-    
-    .alert-level.blue {
-      background: #dbeafe;
-      color: #1e40af;
-    }
-    
-    .alert-info {
-      display: flex;
-      gap: 20px;
-      margin-bottom: 12px;
+    .loading {
+      text-align: center;
+      padding: 40px;
       color: #6b7280;
-      font-size: 14px;
     }
-    
-    .alert-info span {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-    
-    .alert-description {
-      color: #374151;
-      line-height: 1.6;
-      font-size: 15px;
-    }
-    
-    .status-badge {
-      display: inline-block;
-      padding: 3px 10px;
+    .ai-brief {
+      background: linear-gradient(135deg, #e0e7ff 0%, #f3e8ff 100%);
       border-radius: 12px;
-      font-size: 12px;
-      font-weight: 600;
-      margin-left: 10px;
-    }
-    
-    .status-badge.active {
-      background: #dcfce7;
-      color: #166534;
-    }
-    
-    .status-badge.expired {
-      background: #f3f4f6;
-      color: #6b7280;
-    }
-    
-    .daily-brief-section {
-      background: white;
-      border-radius: 10px;
       padding: 25px;
-      margin-bottom: 30px;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 20px;
+      border-left: 5px solid #667eea;
     }
-    
-    .daily-brief-section h2 {
-      margin: 0 0 15px 0;
-      color: #1f2937;
+    .ai-brief-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #4c1d95;
+      margin-bottom: 15px;
       display: flex;
       align-items: center;
       gap: 10px;
     }
-    
-    .brief-content {
-      background: #f9fafb;
-      padding: 20px;
-      border-radius: 8px;
-      white-space: pre-wrap;
-      font-family: 'Courier New', monospace;
-      font-size: 14px;
+    .ai-brief-content {
+      color: #1f2937;
       line-height: 1.8;
-      color: #374151;
-      max-height: 400px;
-      overflow-y: auto;
+      font-size: 15px;
     }
-    
-    .back-link {
-      display: inline-block;
-      margin-bottom: 20px;
-      color: #667eea;
-      text-decoration: none;
-      font-weight: 500;
-      padding: 8px 16px;
-      border-radius: 6px;
-      background: white;
+    .refresh-btn {
+      padding: 10px 20px;
+      background: #667eea;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
       transition: background 0.3s;
     }
-    
-    .back-link:hover {
-      background: #f3f4f6;
+    .refresh-btn:hover {
+      background: #5568d3;
     }
-    
-    .empty-state {
-      text-align: center;
-      padding: 60px 20px;
-      color: #9ca3af;
-    }
-    
-    .empty-state svg {
-      width: 80px;
-      height: 80px;
-      margin-bottom: 20px;
-      opacity: 0.5;
+    .refresh-btn:disabled {
+      background: #9ca3af;
+      cursor: not-allowed;
     }
   </style>
 </head>
-<body style="background: #f3f4f6;">
+<body>
   <div class="topbar">
-    <div class="brand">GeoWeather - 预警中心</div>
+    <div class="brand">GeoWeather</div>
     <div style="margin-left: auto; display: flex; gap: 20px; align-items: flex-start;">
       <div style="display: flex; flex-direction: column; align-items: center;">
         <a href="/" style="color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.2); border-radius: 4px; transition: background 0.3s; display: block; text-align: center;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">🏠</a>
         <span style="color: #333; font-size: 11px; margin-top: 4px; white-space: nowrap; font-weight: 500;">地图主页</span>
       </div>
       <div style="display: flex; flex-direction: column; align-items: center;">
-        <a href="/alerts" style="color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.3); border-radius: 4px; display: block; text-align: center;" onmouseover="this.style.background='rgba(255,255,255,0.4)'" onmouseout="this.style.background='rgba(255,255,255,0.3)'">🚨</a>
+        <a href="/alerts" style="color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.3); border-radius: 4px; display: block; text-align: center;">🚨</a>
         <span style="color: #333; font-size: 11px; margin-top: 4px; white-space: nowrap; font-weight: 500;">预警中心</span>
       </div>
       <div style="display: flex; flex-direction: column; align-items: center;">
         <a href="/profile" style="color: white; text-decoration: none; padding: 8px 15px; background: rgba(255,255,255,0.2); border-radius: 4px; transition: background 0.3s; display: block; text-align: center;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">👤</a>
         <span style="color: #333; font-size: 11px; margin-top: 4px; white-space: nowrap; font-weight: 500;">个人中心</span>
       </div>
+      <div style="display: flex; flex-direction: column; align-items: center; border-left: 1px solid rgba(255,255,255,0.3); padding-left: 20px;">
+        <div style="color: #fff; font-size: 13px; font-weight: 600; margin-bottom: 2px;">{{ user.username }}</div>
+        <a href="/logout" style="color: #ff3b3b; font-size: 12px; text-decoration: none; font-weight: 600; cursor: pointer; text-shadow: 0 0 8px rgba(255,59,59,0.5);" onmouseover="this.style.color='#ff0000'" onmouseout="this.style.color='#ff3b3b'">🚪 退出登录</a>
+      </div>
     </div>
   </div>
 
-  <div class="alerts-container" style="margin-top: 80px;">
-    <a href="/" class="back-link">← 返回地图</a>
-    
+  <div class="alerts-container">
     <div class="alerts-header">
       <h1>🚨 气象预警中心</h1>
-      <p>实时监控各地气象预警信息，及时了解天气变化</p>
+      <p>实时监测 · AI 智能分析 · 精准预警</p>
     </div>
 
-    <div class="daily-brief-section">
-      <h2>📋 今日简报</h2>
-      <div class="brief-content" id="dailyBrief">加载中...</div>
-    </div>
-
-    <div style="background: white; border-radius: 10px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
-      <h2 style="margin: 0 0 20px 0; color: #1f2937;">预警列表</h2>
-      
-      <div class="filter-tabs">
-        <div class="filter-tab active" data-filter="all">全部</div>
-        <div class="filter-tab" data-filter="active">活跃中</div>
-        <div class="filter-tab" data-filter="expired">已过期</div>
+    <!-- 城市选择器 -->
+    <div class="section-card">
+      <div class="section-title">📍 选择监测城市</div>
+      <div class="city-selector">
+        <button class="city-btn active" data-city="天津" data-lat="39.0851" data-lng="117.1994" onclick="selectCity(this)">天津</button>
+        <button class="city-btn" data-city="北京" data-lat="39.9042" data-lng="116.4074" onclick="selectCity(this)">北京</button>
+        <button class="city-btn" data-city="上海" data-lat="31.2304" data-lng="121.4737" onclick="selectCity(this)">上海</button>
+        <button class="city-btn" data-city="广州" data-lat="23.1291" data-lng="113.2644" onclick="selectCity(this)">广州</button>
+        <button class="city-btn" data-city="深圳" data-lat="22.5431" data-lng="114.0579" onclick="selectCity(this)">深圳</button>
+        <button class="city-btn" data-city="成都" data-lat="30.5728" data-lng="104.0668" onclick="selectCity(this)">成都</button>
       </div>
+    </div>
 
-      <div id="alertsList">
-        <div class="empty-state">
-          <p>加载中...</p>
+    <!-- AI 今日简报 -->
+    <div class="ai-brief" id="aiBrief">
+      <div class="ai-brief-title">
+        🤖 AI 今日气象简报
+        <button class="refresh-btn" id="refreshBrief" onclick="refreshAIBrief()">🔄 刷新</button>
+      </div>
+      <div class="ai-brief-content" id="briefContent">
+        <div class="loading">正在加载 AI 分析...</div>
+      </div>
+    </div>
+
+    <!-- 实时数据统计 -->
+    <div class="section-card">
+      <div class="section-title">📊 实时气象数据</div>
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-box">
+          <div class="stat-value" id="tempValue">--</div>
+          <div class="stat-label">当前温度 (°C)</div>
         </div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%);">
+          <div class="stat-value" id="rainValue">--</div>
+          <div class="stat-label">降雨概率 (%)</div>
+        </div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+          <div class="stat-value" id="windValue">--</div>
+          <div class="stat-label">风速 (m/s)</div>
+        </div>
+        <div class="stat-box" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+          <div class="stat-value" id="alertCount">0</div>
+          <div class="stat-label">活跃预警</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 综合风险评分 -->
+    <div class="section-card">
+      <div class="section-title">⚡ 综合风险评分</div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 20px;">
+        <!-- 总体风险 -->
+        <div style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; padding: 25px; border-radius: 12px; text-align: center;">
+          <div style="font-size: 14px; opacity: 0.9; margin-bottom: 10px;">总体风险等级</div>
+          <div style="font-size: 48px; font-weight: 700; margin-bottom: 5px;" id="totalRiskScore">0</div>
+          <div style="font-size: 16px; font-weight: 600;" id="totalRiskLevel">计算中...</div>
+          <div style="font-size: 12px; opacity: 0.8; margin-top: 10px;">满分100分</div>
+        </div>
+        
+        <!-- 风力风险 -->
+        <div style="background: white; border: 2px solid #e5e7eb; padding: 20px; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+            <span style="font-size: 24px;">💨</span>
+            <span style="font-size: 16px; font-weight: 600; color: #1f2937;">风力风险</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 5px; margin-bottom: 10px;">
+            <span style="font-size: 36px; font-weight: 700; color: #10b981;" id="windRiskScore">0</span>
+            <span style="font-size: 16px; color: #6b7280;">/35分</span>
+          </div>
+          <div style="height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
+            <div id="windRiskBar" style="height: 100%; background: linear-gradient(90deg, #10b981, #059669); width: 0%; transition: width 0.5s;"></div>
+          </div>
+          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;" id="windRiskDesc">计算中...</div>
+        </div>
+        
+        <!-- 降雨/雪风险 -->
+        <div style="background: white; border: 2px solid #e5e7eb; padding: 20px; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+            <span style="font-size: 24px;">🌧️</span>
+            <span style="font-size: 16px; font-weight: 600; color: #1f2937;">降水风险</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 5px; margin-bottom: 10px;">
+            <span style="font-size: 36px; font-weight: 700; color: #3b82f6;" id="rainRiskScore">0</span>
+            <span style="font-size: 16px; color: #6b7280;">/40分</span>
+          </div>
+          <div style="height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
+            <div id="rainRiskBar" style="height: 100%; background: linear-gradient(90deg, #3b82f6, #2563eb); width: 0%; transition: width 0.5s;"></div>
+          </div>
+          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;" id="rainRiskDesc">计算中...</div>
+        </div>
+        
+        <!-- 温度风险 -->
+        <div style="background: white; border: 2px solid #e5e7eb; padding: 20px; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+            <span style="font-size: 24px;">🌡️</span>
+            <span style="font-size: 16px; font-weight: 600; color: #1f2937;">温度风险</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 5px; margin-bottom: 10px;">
+            <span style="font-size: 36px; font-weight: 700; color: #f59e0b;" id="tempRiskScore">0</span>
+            <span style="font-size: 16px; color: #6b7280;">/25分</span>
+          </div>
+          <div style="height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
+            <div id="tempRiskBar" style="height: 100%; background: linear-gradient(90deg, #f59e0b, #d97706); width: 0%; transition: width 0.5s;"></div>
+          </div>
+          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;" id="tempRiskDesc">计算中...</div>
+        </div>
+      </div>
+      
+      <!-- 风险说明 -->
+      <div style="background: #f3f4f6; padding: 15px; border-radius: 8px; font-size: 13px; color: #6b7280;">
+        <strong style="color: #1f2937;">风险评分标准：</strong>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 10px;">
+          <div>💨 风速 >10m/s: 高风险</div>
+          <div>🌧️ 降水概率 >70%: 高风险</div>
+          <div>🌡️ 温度 <0°C 或 >35°C: 高风险</div>
+          <div><strong>总分0-30</strong>: 低风险 ✅</div>
+          <div><strong>总分30-60</strong>: 中风险 ⚠️</div>
+          <div><strong>总分60-100</strong>: 高风险 ❌</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 24小时趋势图表 -->
+    <div class="section-card">
+      <div class="section-title">📈 未来24小时趋势</div>
+      <div class="chart-container" id="trendChart"></div>
+    </div>
+
+    <!-- 风险分析图表 -->
+    <div class="section-card">
+      <div class="section-title">⚠️ 风险等级分布</div>
+      <div class="chart-container" id="riskChart" style="height: 300px;"></div>
+    </div>
+
+    <!-- 预警列表 -->
+    <div class="section-card">
+      <div class="section-title">🔔 当前预警列表</div>
+      <div id="alertsList">
+        <div class="loading">正在加载预警信息...</div>
       </div>
     </div>
   </div>
 
   <script>
-    let allAlerts = [];
-    let currentFilter = 'all';
+    let currentCity = '天津';
+    let currentLat = 39.0851;
+    let currentLng = 117.1994;
+    let weatherData = null;
+    let trendChartInstance = null;
+    let riskChartInstance = null;
 
-    // 加载日报简报
-    async function loadDailyBrief() {
-      try {
-        const response = await fetch('/api/daily_brief');
-        const data = await response.json();
-        document.getElementById('dailyBrief').textContent = data.content;
-      } catch (error) {
-        document.getElementById('dailyBrief').textContent = '加载简报失败';
-        console.error('Error loading daily brief:', error);
-      }
+    // 选择城市
+    function selectCity(btn) {
+      document.querySelectorAll('.city-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentCity = btn.dataset.city;
+      currentLat = parseFloat(btn.dataset.lat);
+      currentLng = parseFloat(btn.dataset.lng);
+      loadWeatherData();
     }
 
-    // 加载预警数据
-    async function loadAlerts() {
+    // 加载天气数据
+    async function loadWeatherData() {
       try {
-        const response = await fetch('/api/alerts');
-        allAlerts = await response.json();
-        renderAlerts();
-      } catch (error) {
-        console.error('Error loading alerts:', error);
-        document.getElementById('alertsList').innerHTML = '<div class="empty-state"><p>加载失败</p></div>';
-      }
-    }
-
-    // 渲染预警列表
-    function renderAlerts() {
-      const container = document.getElementById('alertsList');
-      
-      let filteredAlerts = allAlerts;
-      if (currentFilter !== 'all') {
-        filteredAlerts = allAlerts.filter(a => a.status === currentFilter);
-      }
-      
-      if (filteredAlerts.length === 0) {
-        container.innerHTML = '<div class="empty-state"><p>暂无预警信息</p></div>';
-        return;
-      }
-      
-      const levelColorMap = {
-        '红色': 'red',
-        '橙色': 'orange',
-        '黄色': 'yellow',
-        '蓝色': 'blue'
-      };
-      
-      container.innerHTML = filteredAlerts.map(alert => {
-        const levelColor = levelColorMap[alert.level] || 'blue';
-        const statusClass = alert.status === 'active' ? 'active' : 'expired';
-        const statusText = alert.status === 'active' ? '活跃中' : '已过期';
+        const response = await fetch(`/api/weather?lat=${currentLat}&lng=${currentLng}`);
+        weatherData = await response.json();
         
-        return `
-          <div class="alert-card level-${levelColor} ${alert.status}">
-            <div class="alert-header">
-              <div class="alert-type">
-                ${alert.type}
-                <span class="status-badge ${statusClass}">${statusText}</span>
-              </div>
-              <div class="alert-level ${levelColor}">${alert.level}</div>
-            </div>
-            <div class="alert-info">
-              <span>📍 ${alert.location}</span>
-              <span>🕐 ${alert.time}</span>
-            </div>
-            <div class="alert-description">${alert.description}</div>
+        updateStats();
+        updateRiskScores();
+        updateCharts();
+        updateAlerts();
+        refreshAIBrief();
+      } catch (error) {
+        console.error('加载天气数据失败:', error);
+      }
+    }
+
+    // 更新统计数据
+    function updateStats() {
+      if (!weatherData) return;
+      
+      document.getElementById('tempValue').textContent = Math.round(weatherData.current_temp);
+      document.getElementById('rainValue').textContent = Math.round(weatherData.rain_probability * 100);
+      document.getElementById('windValue').textContent = weatherData.wind_speed.toFixed(1);
+      
+      // 计算活跃预警数
+      let alertCount = 0;
+      if (weatherData.rain_probability > 0.7) alertCount++;
+      if (weatherData.wind_speed > 8) alertCount++;
+      if (weatherData.current_temp < 0 || weatherData.current_temp > 35) alertCount++;
+      document.getElementById('alertCount').textContent = alertCount;
+    }
+
+    // 更新图表
+    function updateCharts() {
+      if (!weatherData) return;
+
+      // 24小时趋势图
+      const trendChart = echarts.init(document.getElementById('trendChart'));
+      const hours = weatherData.hourly_temps.map((_, i) => `${i}:00`);
+      
+      trendChart.setOption({
+        tooltip: { trigger: 'axis' },
+        legend: { data: ['温度', '降雨概率', '风速'] },
+        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+        xAxis: { type: 'category', boundaryGap: false, data: hours },
+        yAxis: { type: 'value' },
+        series: [
+          {
+            name: '温度',
+            type: 'line',
+            data: weatherData.hourly_temps,
+            smooth: true,
+            itemStyle: { color: '#ef4444' }
+          },
+          {
+            name: '降雨概率',
+            type: 'line',
+            data: weatherData.hourly_rain_probs.map(p => p * 100),
+            smooth: true,
+            itemStyle: { color: '#3b82f6' }
+          },
+          {
+            name: '风速',
+            type: 'line',
+            data: weatherData.hourly_winds,
+            smooth: true,
+            itemStyle: { color: '#10b981' }
+          }
+        ]
+      });
+
+      // 风险分析饼图
+      const riskChart = echarts.init(document.getElementById('riskChart'));
+      const risks = calculateRisks();
+      
+      riskChart.setOption({
+        tooltip: { trigger: 'item' },
+        legend: { orient: 'vertical', left: 'left' },
+        series: [{
+          name: '风险类型',
+          type: 'pie',
+          radius: '60%',
+          data: risks,
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 10,
+              shadowOffsetX: 0,
+              shadowColor: 'rgba(0, 0, 0, 0.5)'
+            }
+          }
+        }]
+      });
+    }
+
+    // 计算风险
+    function calculateRisks() {
+      if (!weatherData) return [];
+      
+      const risks = [];
+      const maxRain = Math.max(...weatherData.hourly_rain_probs);
+      const maxWind = Math.max(...weatherData.hourly_winds);
+      const temp = weatherData.current_temp;
+      
+      if (maxRain > 0.7) risks.push({ value: 35, name: '高降雨风险' });
+      else if (maxRain > 0.5) risks.push({ value: 20, name: '中等降雨' });
+      else risks.push({ value: 10, name: '低降雨' });
+      
+      if (maxWind > 8) risks.push({ value: 30, name: '强风预警' });
+      else if (maxWind > 5) risks.push({ value: 15, name: '中等风力' });
+      else risks.push({ value: 10, name: '微风' });
+      
+      if (temp < 0) risks.push({ value: 25, name: '低温预警' });
+      else if (temp > 35) risks.push({ value: 25, name: '高温预警' });
+      else risks.push({ value: 10, name: '温度适宜' });
+      
+      return risks;
+    }
+
+    // 计算风险评分
+    function calculateRiskScores() {
+      if (!weatherData) return { windRisk: 0, rainRisk: 0, tempRisk: 0, totalRisk: 0 };
+      
+      const maxRain = Math.max(...weatherData.hourly_rain_probs);
+      const maxWind = Math.max(...weatherData.hourly_winds);
+      const temp = weatherData.current_temp;
+      
+      // 风力风险 (0-35分)
+      let windRisk = 0;
+      let windDesc = '';
+      if (maxWind > 10) {
+        windRisk = 35;
+        windDesc = '风速超过10m/s，存在强风险';
+      } else if (maxWind > 8) {
+        windRisk = 25;
+        windDesc = '风速较大，需要注意防风';
+      } else if (maxWind > 5) {
+        windRisk = 15;
+        windDesc = '风力适中，基本安全';
+      } else {
+        windRisk = 5;
+        windDesc = '微风，适宜户外活动';
+      }
+      
+      // 降水风险 (0-40分)
+      let rainRisk = 0;
+      let rainDesc = '';
+      if (maxRain > 0.7) {
+        rainRisk = 40;
+        rainDesc = '降雨概率>70%，高降水风险';
+      } else if (maxRain > 0.5) {
+        rainRisk = 25;
+        rainDesc = '可能有降雨，建议携带雨具';
+      } else if (maxRain > 0.3) {
+        rainRisk = 15;
+        rainDesc = '降雨概率较低，基本安全';
+      } else {
+        rainRisk = 5;
+        rainDesc = '晴朗天气，无降水风险';
+      }
+      
+      // 温度风险 (0-25分)
+      let tempRisk = 0;
+      let tempDesc = '';
+      if (temp < -10 || temp > 40) {
+        tempRisk = 25;
+        tempDesc = '极端温度，请做好防护';
+      } else if (temp < 0 || temp > 35) {
+        tempRisk = 20;
+        tempDesc = '温度偏离舒适区，注意防护';
+      } else if (temp < 5 || temp > 30) {
+        tempRisk = 10;
+        tempDesc = '温度略有不适，适当防护';
+      } else {
+        tempRisk = 3;
+        tempDesc = '温度舒适，适宜活动';
+      }
+      
+      const totalRisk = windRisk + rainRisk + tempRisk;
+      
+      return { 
+        windRisk, rainRisk, tempRisk, totalRisk,
+        windDesc, rainDesc, tempDesc
+      };
+    }
+
+    // 更新风险评分显示
+    function updateRiskScores() {
+      const scores = calculateRiskScores();
+      
+      // 更新总体风险
+      document.getElementById('totalRiskScore').textContent = scores.totalRisk;
+      let riskLevel = '';
+      let riskColor = '';
+      if (scores.totalRisk < 30) {
+        riskLevel = '低风险 ✅';
+        riskColor = 'linear-gradient(135deg, #10b981 0%, #059669 100%)';
+      } else if (scores.totalRisk < 60) {
+        riskLevel = '中风险 ⚠️';
+        riskColor = 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)';
+      } else {
+        riskLevel = '高风险 ❌';
+        riskColor = 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+      }
+      document.getElementById('totalRiskLevel').textContent = riskLevel;
+      document.getElementById('totalRiskScore').parentElement.style.background = riskColor;
+      
+      // 更新风力风险
+      document.getElementById('windRiskScore').textContent = scores.windRisk;
+      document.getElementById('windRiskBar').style.width = ((scores.windRisk / 35) * 100) + '%';
+      document.getElementById('windRiskDesc').textContent = scores.windDesc;
+      
+      // 更新降水风险
+      document.getElementById('rainRiskScore').textContent = scores.rainRisk;
+      document.getElementById('rainRiskBar').style.width = ((scores.rainRisk / 40) * 100) + '%';
+      document.getElementById('rainRiskDesc').textContent = scores.rainDesc;
+      
+      // 更新温度风险
+      document.getElementById('tempRiskScore').textContent = scores.tempRisk;
+      document.getElementById('tempRiskBar').style.width = ((scores.tempRisk / 25) * 100) + '%';
+      document.getElementById('tempRiskDesc').textContent = scores.tempDesc;
+    }
+
+    // 更新预警列表
+    function updateAlerts() {
+      if (!weatherData) return;
+      
+      const alertsList = document.getElementById('alertsList');
+      const alerts = [];
+      
+      const maxRain = Math.max(...weatherData.hourly_rain_probs);
+      const maxWind = Math.max(...weatherData.hourly_winds);
+      const temp = weatherData.current_temp;
+      
+      if (maxRain > 0.7) {
+        alerts.push({
+          level: 'high',
+          title: '🌧️ 强降雨预警',
+          desc: `未来24小时降雨概率高达 ${(maxRain * 100).toFixed(0)}%，请注意防范`
+        });
+      } else if (maxRain > 0.5) {
+        alerts.push({
+          level: 'medium',
+          title: '☔ 降雨提示',
+          desc: `未来可能有降雨，概率 ${(maxRain * 100).toFixed(0)}%，建议携带雨具`
+        });
+      }
+      
+      if (maxWind > 8) {
+        alerts.push({
+          level: 'high',
+          title: '💨 大风预警',
+          desc: `最大风速可达 ${maxWind.toFixed(1)} m/s，请注意防风`
+        });
+      } else if (maxWind > 5) {
+        alerts.push({
+          level: 'medium',
+          title: '🌬️ 风力提示',
+          desc: `风速 ${maxWind.toFixed(1)} m/s，外出注意安全`
+        });
+      }
+      
+      if (temp < 0) {
+        alerts.push({
+          level: 'high',
+          title: '❄️ 低温预警',
+          desc: `当前温度 ${temp}°C，请注意防寒保暖`
+        });
+      } else if (temp > 35) {
+        alerts.push({
+          level: 'high',
+          title: '🔥 高温预警',
+          desc: `当前温度 ${temp}°C，请注意防暑降温`
+        });
+      }
+      
+      if (alerts.length === 0) {
+        alertsList.innerHTML = '<div style="text-align: center; padding: 20px; color: #10b981;">✅ 当前无预警信息，天气状况良好</div>';
+      } else {
+        alertsList.innerHTML = alerts.map(alert => `
+          <div class="alert-item ${alert.level}">
+            <div class="alert-title">${alert.title}</div>
+            <div class="alert-desc">${alert.desc}</div>
+          </div>
+        `).join('');
+      }
+    }
+
+    // 刷新 AI 简报
+    async function refreshAIBrief() {
+      const btn = document.getElementById('refreshBrief');
+      const content = document.getElementById('briefContent');
+      
+      btn.disabled = true;
+      content.innerHTML = '<div class="loading">🤖 AI 正在分析天气数据...</div>';
+      
+      try {
+        const response = await fetch(`/api/ai-brief?lat=${currentLat}&lng=${currentLng}&city=${currentCity}`);
+        const data = await response.json();
+        
+        content.innerHTML = `
+          <div style="margin-bottom: 15px;">
+            <strong>📋 综合建议：</strong> ${data.summary}
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong>🎯 出行建议：</strong> ${data.recommendation === 'GO' ? '✅ 适合出行' : data.recommendation === 'CAUTION' ? '⚠️ 谨慎出行' : '❌ 不建议出行'}
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong>⏰ 最佳时间：</strong> ${data.optimal_time || '全天可出行'}
+          </div>
+          <div style="margin-bottom: 10px;">
+            <strong>💡 具体建议：</strong>
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              ${data.suggestions.map(s => `<li>${s}</li>`).join('')}
+            </ul>
+          </div>
+          <div style="font-size: 12px; color: #6b7280; margin-top: 15px;">
+            <em>AI 分析完成于 ${new Date().toLocaleTimeString('zh-CN')}</em>
           </div>
         `;
-      }).join('');
+      } catch (error) {
+        content.innerHTML = '<div style="color: #ef4444;">AI 分析失败，请稍后重试</div>';
+      } finally {
+        btn.disabled = false;
+      }
     }
 
-    // 过滤器切换
-    document.querySelectorAll('.filter-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        currentFilter = tab.dataset.filter;
-        renderAlerts();
-      });
-    });
-
-    // 初始化加载
-    loadDailyBrief();
-    loadAlerts();
-
-    // 定时刷新（每30秒）
-    setInterval(() => {
-      loadAlerts();
-      loadDailyBrief();
-    }, 30000);
+    // 页面加载时初始化
+    window.onload = function() {
+      loadWeatherData();
+    };
   </script>
 </body>
 </html>
