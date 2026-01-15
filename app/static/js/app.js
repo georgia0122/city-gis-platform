@@ -2,6 +2,8 @@ let selectedPlace = null;
 let latestRainProb = null;
 let map = null;
 let markers = {};
+let userLocationMarker = null;
+let userLocationCircle = null;
 
 const placeNameEl = document.getElementById("placeName");
 const recTextEl = document.getElementById("recText");
@@ -309,3 +311,303 @@ loadPlacesAndInitMap().catch(err => {
 
 // 加载预警统计
 loadAlertStats();
+
+// ========== 用户位置定位功能 ==========
+let isLocating = false;
+
+// 创建自定义的用户位置图标
+function createUserLocationIcon() {
+  return L.divIcon({
+    className: 'user-location-marker',
+    html: `
+      <div style="
+        width: 20px;
+        height: 20px;
+        background: #4285f4;
+        border: 3px solid white;
+        border-radius: 50%;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        position: relative;
+      ">
+        <div style="
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          width: 8px;
+          height: 8px;
+          background: white;
+          border-radius: 50%;
+        "></div>
+      </div>
+    `,
+    iconSize: [26, 26],
+    iconAnchor: [13, 13]
+  });
+}
+
+// 反向地理编码获取地址
+async function reverseGeocode(lat, lng) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1&accept-language=zh`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'GeoWeather Platform'
+      }
+    });
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Reverse geocode error:', error);
+    return null;
+  }
+}
+
+// 格式化地址显示
+function formatAddress(geocodeResult) {
+  if (!geocodeResult || !geocodeResult.address) {
+    return '未知地址';
+  }
+  
+  const addr = geocodeResult.address;
+  const parts = [];
+  
+  // 按优先级添加地址组件
+  if (addr.road) parts.push(addr.road);
+  if (addr.house_number) parts.push(addr.house_number + '号');
+  if (addr.neighbourhood) parts.push(addr.neighbourhood);
+  if (addr.suburb) parts.push(addr.suburb);
+  if (addr.district) parts.push(addr.district);
+  if (addr.city || addr.town || addr.village) {
+    parts.push(addr.city || addr.town || addr.village);
+  }
+  if (addr.state || addr.province) parts.push(addr.state || addr.province);
+  if (addr.country) parts.push(addr.country);
+  
+  return parts.length > 0 ? parts.join(', ') : geocodeResult.display_name || '未知地址';
+}
+
+// 获取用户位置
+async function getUserLocation() {
+  const locateBtn = document.getElementById('locateBtn');
+  const locationStatus = document.getElementById('locationStatus');
+  
+  if (isLocating) return;
+  
+  if (!navigator.geolocation) {
+    locationStatus.textContent = '❌ 您的浏览器不支持定位功能';
+    locationStatus.style.color = '#ef4444';
+    return;
+  }
+  
+  isLocating = true;
+  locateBtn.disabled = true;
+  locateBtn.innerHTML = '📍 定位中...';
+  locationStatus.textContent = '正在获取您的位置...';
+  locationStatus.style.color = '#666';
+  
+  try {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      });
+    });
+    
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const accuracy = position.coords.accuracy;
+    
+    // 移除之前的用户位置标记
+    if (userLocationMarker) {
+      map.removeLayer(userLocationMarker);
+    }
+    if (userLocationCircle) {
+      map.removeLayer(userLocationCircle);
+    }
+    
+    // 添加精度圆圈
+    userLocationCircle = L.circle([lat, lng], {
+      radius: accuracy,
+      color: '#4285f4',
+      fillColor: '#4285f4',
+      fillOpacity: 0.15,
+      weight: 1
+    }).addTo(map);
+    
+    // 添加用户位置标记
+    userLocationMarker = L.marker([lat, lng], {
+      icon: createUserLocationIcon(),
+      zIndexOffset: 1000
+    }).addTo(map);
+    
+    // 反向地理编码获取地址
+    locationStatus.textContent = '正在获取地址信息...';
+    const geocodeResult = await reverseGeocode(lat, lng);
+    const address = formatAddress(geocodeResult);
+    
+    // 绑定弹出窗口
+    const popupContent = `
+      <div style="min-width: 200px;">
+        <div style="font-weight: 600; color: #4285f4; margin-bottom: 8px;">📍 您的当前位置</div>
+        <div style="font-size: 13px; color: #333; margin-bottom: 6px;">${address}</div>
+        <div style="font-size: 11px; color: #999;">
+          坐标: ${lat.toFixed(6)}, ${lng.toFixed(6)}<br>
+          精度: ±${Math.round(accuracy)}米
+        </div>
+      </div>
+    `;
+    userLocationMarker.bindPopup(popupContent).openPopup();
+    
+    // 移动地图到用户位置
+    map.setView([lat, lng], 15);
+    
+    // 更新状态显示
+    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${address}`;
+    locationStatus.style.color = '#333';
+    
+    // 创建一个地点对象用于天气查询
+    const userPlace = {
+      id: `user_location_${Date.now()}`,
+      name: '我的位置',
+      fullName: address,
+      lat: lat,
+      lng: lng,
+      city: geocodeResult?.address?.city || geocodeResult?.address?.town || geocodeResult?.address?.village || '',
+      country: geocodeResult?.address?.country || ''
+    };
+    
+    // 点击标记时选择该位置
+    userLocationMarker.on('click', async () => {
+      await selectPlace(userPlace);
+    });
+    
+    // 自动加载天气趋势数据和图表
+    locationStatus.textContent = '正在加载天气数据...';
+    await selectPlace(userPlace);
+    
+    // 自动触发 AI 分析生成建议
+    locationStatus.textContent = '正在生成 AI 分析建议...';
+    await triggerAIAnalysis();
+    
+    // 更新最终状态
+    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${address} - 分析完成`;
+    
+  } catch (error) {
+    console.error('Geolocation error:', error);
+    let errorMsg = '定位失败';
+    
+    switch (error.code) {
+      case error.PERMISSION_DENIED:
+        errorMsg = '❌ 您拒绝了位置访问权限';
+        break;
+      case error.POSITION_UNAVAILABLE:
+        errorMsg = '❌ 无法获取位置信息';
+        break;
+      case error.TIMEOUT:
+        errorMsg = '❌ 定位超时，请重试';
+        break;
+      default:
+        errorMsg = `❌ 定位失败: ${error.message}`;
+    }
+    
+    locationStatus.textContent = errorMsg;
+    locationStatus.style.color = '#ef4444';
+  } finally {
+    isLocating = false;
+    locateBtn.disabled = false;
+    locateBtn.innerHTML = '📍 定位我的位置';
+  }
+}
+
+// 触发 AI 分析的函数（复用 btnAdvice 的逻辑）
+async function triggerAIAnalysis() {
+  if (!selectedPlace) return;
+
+  btnAdvice.disabled = true;
+  setAdviceText("🤔 正在生成建议…");
+
+  try {
+    const resp = await fetch("/api/ai_analysis", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        place_id: selectedPlace.id,
+        place_name: selectedPlace.name,
+        city: selectedPlace.city
+      })
+    }).then(r => r.json());
+
+    if (resp.error) {
+      setAdviceText(`❌ 分析失败: ${resp.error}`);
+      btnAdvice.disabled = false;
+      return;
+    }
+
+    const analysis = resp.analysis;
+    const analysisMethod = resp.analysis_method || "rule";
+    
+    recTextEl.textContent = analysis.recommendation || "—";
+
+    const methodLabel = analysisMethod === "ai" ? "🤖 AI 分析" : "📊 规则分析";
+    const methodNote = analysisMethod === "ai" ? "" : " (AI 已降级)";
+    
+    let recEmoji = "✈️";
+    if (analysis.recommendation === "AVOID") {
+      recEmoji = "❌";
+    } else if (analysis.recommendation === "CAUTION") {
+      recEmoji = "⚠️";
+    } else if (analysis.recommendation === "GO") {
+      recEmoji = "✅";
+    }
+    
+    const lines = [];
+    
+    lines.push(`${recEmoji} 出行建议: ${analysis.recommendation}${methodNote}`);
+    
+    if (analysis.optimal_time) {
+      lines.push(`⏰ 最佳时间段: ${analysis.optimal_time}`);
+    }
+    
+    const confidenceEmoji = analysis.confidence_score >= 0.8 ? "✅" : (analysis.confidence_score >= 0.6 ? "👍" : "📌");
+    lines.push(`${confidenceEmoji} 分析方法: ${methodLabel} | 置信度: ${Math.round(analysis.confidence_score * 100)}%`);
+    
+    lines.push("");
+    
+    lines.push(`📝 评价: ${analysis.summary}`);
+    lines.push("");
+    
+    if (analysis.suggestions && analysis.suggestions.length > 0) {
+      lines.push("💡 行动建议:");
+      analysis.suggestions.forEach((s, idx) => {
+        const num = idx + 1;
+        lines.push(`   ${num}. ${s}`);
+      });
+      lines.push("");
+    }
+    
+    if (analysis.risks && analysis.risks.length > 0) {
+      lines.push("⚠️ 风险评估:");
+      analysis.risks.forEach(risk => {
+        const severityEmoji = {
+          'HIGH': '🔴',
+          'MEDIUM': '🟡',
+          'LOW': '🟢'
+        }[risk.severity] || '◯';
+        lines.push(`   ${severityEmoji} ${risk.risk_type} (${risk.severity})`);
+        lines.push(`      └─ ${risk.evidence}`);
+      });
+    }
+
+    setAdviceText(lines.join("\n"));
+  } catch (error) {
+    console.error('Analysis error:', error);
+    setAdviceText(`❌ 分析失败: ${error.message}`);
+  }
+
+  btnAdvice.disabled = false;
+}
+
+// 绑定定位按钮事件
+document.getElementById('locateBtn')?.addEventListener('click', getUserLocation);
