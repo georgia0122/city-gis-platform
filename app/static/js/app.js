@@ -66,10 +66,27 @@ async function loadPlacesAndInitMap() {
     position: 'bottomleft'
   }).addTo(map);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  // 主图层（OSM）+ 失败时自动切换到 Carto CDN
+  const primaryTile = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
-    attribution: "© OpenStreetMap"
-  }).addTo(map);
+    attribution: "© OpenStreetMap",
+  });
+
+  const fallbackTile = L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+    maxZoom: 19,
+    subdomains: "abcd",
+    attribution: "© OpenStreetMap, © CARTO"
+  });
+
+  primaryTile.on('tileerror', () => {
+    if (map.hasLayer(primaryTile)) {
+      map.removeLayer(primaryTile);
+      fallbackTile.addTo(map);
+      console.warn('OSM tile load failed, switched to Carto CDN');
+    }
+  });
+
+  primaryTile.addTo(map);
 
   const places = await fetch("/api/places").then(r => r.json());
 

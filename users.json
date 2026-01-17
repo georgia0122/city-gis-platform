@@ -1,9 +1,9 @@
 {
   "georgia": {
     "username": "georgia",
-    "email": "yoyo@admin.com",
+    "email": "",
     "full_name": null,
-    "hashed_password": "$2b$12$6RIExkTCyCWG.7Xw6HpCu.t.hvG4COOWtHSHY61VoHwKFF6aEMA7W",
-    "created_at": "2026-01-14 16:50:00"
+    "hashed_password": "$pbkdf2-sha256$29000$LiXEWAtBaE3J.d/7H6MUwg$lIGsXZqwf6Iac7qp.Rouahup1O2wWW87lEGZhRstRnw",
+    "created_at": "2026-01-17 03:59:12"
   }
 }

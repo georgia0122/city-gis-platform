@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: city-gis-platform
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=False
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./app:/app/app
+      - ./users.json:/app/users.json
+    env_file:
+      - .env
+    restart: unless-stopped
+    networks:
+      - city-network
+
+networks:
+  city-network:
+    driver: bridge
