@@ -20,6 +20,9 @@ function setAdviceText(text) {
   adviceBox.textContent = text;
 }
 
+// 初始显示提示
+setAdviceText("🔄 正在自动获取您的位置并生成 AI 出行建议...");
+
 function updateChart(hours, temp, rainProb, wind) {
   chart.setOption({
     tooltip: { trigger: "axis" },
@@ -321,7 +324,10 @@ async function loadAlertStats() {
   }
 }
 
-loadPlacesAndInitMap().catch(err => {
+loadPlacesAndInitMap().then(() => {
+  // 地图加载完成后，自动尝试获取用户位置
+  autoLocateUser();
+}).catch(err => {
   console.error(err);
   setAdviceText("加载失败，请查看控制台报错。");
 });
@@ -329,7 +335,156 @@ loadPlacesAndInitMap().catch(err => {
 // 加载预警统计
 loadAlertStats();
 
-// ========== 用户位置定位功能 ==========
+// ========== 自动定位功能 ==========
+
+// 自动定位用户（页面加载时调用）
+async function autoLocateUser() {
+  const locationStatus = document.getElementById('locationStatus');
+  const locateBtn = document.getElementById('locateBtn');
+  
+  // 检查浏览器是否支持定位
+  if (!navigator.geolocation) {
+    locationStatus.textContent = '您的浏览器不支持定位功能';
+    locationStatus.style.color = '#666';
+    return;
+  }
+  
+  // 显示正在定位的状态
+  locationStatus.textContent = '正在自动获取您的位置...';
+  locationStatus.style.color = '#4285f4';
+  if (locateBtn) {
+    locateBtn.disabled = true;
+    locateBtn.innerHTML = '📍 定位中...';
+  }
+  
+  try {
+    // 尝试获取位置
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      });
+    });
+    
+    const lat = position.coords.latitude;
+    const lng = position.coords.longitude;
+    const accuracy = position.coords.accuracy;
+    
+    // 移除之前的用户位置标记
+    if (userLocationMarker) {
+      map.removeLayer(userLocationMarker);
+    }
+    if (userLocationCircle) {
+      map.removeLayer(userLocationCircle);
+    }
+    
+    // 添加精度圆圈
+    userLocationCircle = L.circle([lat, lng], {
+      radius: accuracy,
+      color: '#4285f4',
+      fillColor: '#4285f4',
+      fillOpacity: 0.15,
+      weight: 1
+    }).addTo(map);
+    
+    // 添加用户位置标记
+    userLocationMarker = L.marker([lat, lng], {
+      icon: createUserLocationIcon(),
+      zIndexOffset: 1000
+    }).addTo(map);
+    
+    // 反向地理编码获取地址
+    locationStatus.textContent = '正在获取地址信息...';
+    const geocodeResult = await reverseGeocode(lat, lng);
+    const address = formatAddress(geocodeResult);
+    
+    // 获取简短的地区名称
+    const shortAddress = geocodeResult?.address?.district || 
+                         geocodeResult?.address?.suburb || 
+                         geocodeResult?.address?.city || 
+                         geocodeResult?.address?.town || 
+                         '当前位置';
+    
+    // 绑定弹出窗口
+    const popupContent = `
+      <div style="min-width: 200px;">
+        <div style="font-weight: 600; color: #4285f4; margin-bottom: 8px;">📍 您的当前位置</div>
+        <div style="font-size: 13px; color: #333; margin-bottom: 6px;">${address}</div>
+        <div style="font-size: 11px; color: #999;">
+          坐标: ${lat.toFixed(6)}, ${lng.toFixed(6)}<br>
+          精度: ±${Math.round(accuracy)}米
+        </div>
+      </div>
+    `;
+    userLocationMarker.bindPopup(popupContent).openPopup();
+    
+    // 移动地图到用户位置
+    map.setView([lat, lng], 15);
+    
+    // 更新状态显示
+    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> 已定位到 ${shortAddress}`;
+    locationStatus.style.color = '#333';
+    
+    // 创建一个地点对象用于天气查询
+    const userPlace = {
+      id: `user_location_${Date.now()}`,
+      name: '我的位置',
+      fullName: address,
+      lat: lat,
+      lng: lng,
+      city: geocodeResult?.address?.city || geocodeResult?.address?.town || geocodeResult?.address?.village || shortAddress,
+      country: geocodeResult?.address?.country || ''
+    };
+    
+    // 点击标记时选择该位置
+    userLocationMarker.on('click', async () => {
+      await selectPlace(userPlace);
+    });
+    
+    // 自动加载天气趋势数据
+    placeNameEl.textContent = `我的位置 (${shortAddress})`;
+    await selectPlace(userPlace);
+    
+    // 自动触发 AI 分析生成建议
+    locationStatus.textContent = '正在生成 AI 出行建议...';
+    await triggerAIAnalysis();
+    
+    // 更新最终状态
+    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${shortAddress} - AI 建议已生成`;
+    
+  } catch (error) {
+    console.error('Auto location error:', error);
+    let errorMsg = '';
+    
+    switch (error.code) {
+      case error.PERMISSION_DENIED:
+        errorMsg = '❌ 您拒绝了位置访问权限';
+        break;
+      case error.POSITION_UNAVAILABLE:
+        errorMsg = '❌ 无法获取位置信息';
+        break;
+      case error.TIMEOUT:
+        errorMsg = '❌ 定位超时，请点击按钮重试';
+        break;
+      default:
+        errorMsg = `❌ 自动定位失败`;
+    }
+    
+    locationStatus.textContent = errorMsg;
+    locationStatus.style.color = '#ef4444';
+    
+    // 定位失败时，显示默认提示
+    setAdviceText('自动定位失败，请点击"定位我的位置"按钮手动定位，或搜索/点击地图上的地点查看天气。');
+  } finally {
+    if (locateBtn) {
+      locateBtn.disabled = false;
+      locateBtn.innerHTML = '📍 定位我的位置';
+    }
+  }
+}
+
+// ========== 用户手动定位功能 ==========
 let isLocating = false;
 
 // 创建自定义的用户位置图标
@@ -404,7 +559,7 @@ function formatAddress(geocodeResult) {
   return parts.length > 0 ? parts.join(', ') : geocodeResult.display_name || '未知地址';
 }
 
-// 获取用户位置
+// 获取用户位置（手动点击按钮时调用）
 async function getUserLocation() {
   const locateBtn = document.getElementById('locateBtn');
   const locationStatus = document.getElementById('locationStatus');
@@ -421,7 +576,7 @@ async function getUserLocation() {
   locateBtn.disabled = true;
   locateBtn.innerHTML = '📍 定位中...';
   locationStatus.textContent = '正在获取您的位置...';
-  locationStatus.style.color = '#666';
+  locationStatus.style.color = '#4285f4';
   
   try {
     const position = await new Promise((resolve, reject) => {
@@ -464,6 +619,13 @@ async function getUserLocation() {
     const geocodeResult = await reverseGeocode(lat, lng);
     const address = formatAddress(geocodeResult);
     
+    // 获取简短的地区名称
+    const shortAddress = geocodeResult?.address?.district || 
+                         geocodeResult?.address?.suburb || 
+                         geocodeResult?.address?.city || 
+                         geocodeResult?.address?.town || 
+                         '当前位置';
+    
     // 绑定弹出窗口
     const popupContent = `
       <div style="min-width: 200px;">
@@ -480,10 +642,6 @@ async function getUserLocation() {
     // 移动地图到用户位置
     map.setView([lat, lng], 15);
     
-    // 更新状态显示
-    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${address}`;
-    locationStatus.style.color = '#333';
-    
     // 创建一个地点对象用于天气查询
     const userPlace = {
       id: `user_location_${Date.now()}`,
@@ -491,7 +649,7 @@ async function getUserLocation() {
       fullName: address,
       lat: lat,
       lng: lng,
-      city: geocodeResult?.address?.city || geocodeResult?.address?.town || geocodeResult?.address?.village || '',
+      city: geocodeResult?.address?.city || geocodeResult?.address?.town || geocodeResult?.address?.village || shortAddress,
       country: geocodeResult?.address?.country || ''
     };
     
@@ -500,16 +658,16 @@ async function getUserLocation() {
       await selectPlace(userPlace);
     });
     
-    // 自动加载天气趋势数据和图表
-    locationStatus.textContent = '正在加载天气数据...';
+    // 自动加载天气趋势数据
+    placeNameEl.textContent = `我的位置 (${shortAddress})`;
     await selectPlace(userPlace);
     
     // 自动触发 AI 分析生成建议
-    locationStatus.textContent = '正在生成 AI 分析建议...';
+    locationStatus.textContent = '正在生成 AI 出行建议...';
     await triggerAIAnalysis();
     
     // 更新最终状态
-    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${address} - 分析完成`;
+    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${shortAddress} - AI 建议已生成`;
     
   } catch (error) {
     console.error('Geolocation error:', error);

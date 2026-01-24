@@ -23,9 +23,13 @@ from app.utils.auth import (
     create_access_token,
     decode_access_token
 )
+from app.utils.cache import get_location_cache
 
 # 加载 .env 文件
 load_dotenv()
+
+# 初始化缓存
+location_cache = get_location_cache()
 
 app = FastAPI(title="City GIS Weather Decision Platform")
 
@@ -282,8 +286,6 @@ async def delete_account(request: Request):
 # 扩展城市/地点列表
 PLACES = [
     {"id": "p1", "name": "天津市区", "lat": 39.0851, "lng": 117.1994, "city": "天津"},
-    {"id": "p2", "name": "民园广场", "lat": 39.0649, "lng": 117.1217, "city": "天津"},
-    {"id": "p3", "name": "天津机场", "lat": 39.1304, "lng": 117.3592, "city": "天津"},
     {"id": "p4", "name": "北京市区", "lat": 39.9042, "lng": 116.4074, "city": "北京"},
     {"id": "p5", "name": "上海市区", "lat": 31.2304, "lng": 121.4737, "city": "上海"},
     {"id": "p6", "name": "广州市区", "lat": 23.1291, "lng": 113.2644, "city": "广州"},
@@ -412,10 +414,29 @@ async def get_weather(lat: float, lng: float):
 
 @app.get("/api/ai-brief")
 async def get_ai_brief(lat: float, lng: float, city: str):
-    """获取AI气象简报"""
+    """
+    获取AI气象简报
+    
+    缓存策略：
+    - 同一地点 10 分钟内返回缓存的简报
+    - 缓存键基于 lat, lng, city 组成的唯一标识
+    """
     from app.models.schemas import WeatherData
     from app.agents.rule_based_analyzer import RuleBasedAnalyzer
     from app.utils.llm import get_llm_provider
+    
+    # 创建缓存键（基于坐标和城市名）
+    cache_key = f"ai_brief_{lat}_{lng}_{city}"
+    
+    # 检查缓存
+    cached_data = location_cache.get(cache_key)
+    if cached_data is not None:
+        remaining_time = location_cache.get_remaining_time(cache_key)
+        return {
+            **cached_data,
+            "from_cache": True,
+            "cache_remaining_seconds": remaining_time
+        }
     
     # 获取天气数据
     url = "https://api.open-meteo.com/v1/forecast"
@@ -466,13 +487,19 @@ async def get_ai_brief(lat: float, lng: float, city: str):
             weather_data.hourly_winds
         )
     
-    return {
+    response_data = {
         "summary": result.summary,
         "recommendation": result.recommendation,
         "optimal_time": result.optimal_time,
         "suggestions": result.suggestions,
-        "confidence_score": result.confidence_score
+        "confidence_score": result.confidence_score,
+        "from_cache": False
     }
+    
+    # 缓存结果
+    location_cache.set(cache_key, response_data)
+    
+    return response_data
 
 
 @app.get("/api/weather_hourly")
@@ -483,6 +510,15 @@ async def get_weather_hourly(place_id: str):
 
     lat = place["lat"]
     lon = place["lng"]
+    
+    # 检查缓存
+    cached_data = location_cache.get(place_id)
+    if cached_data is not None:
+        return {
+            **cached_data,
+            "from_cache": True,
+            "cache_remaining_seconds": location_cache.get_remaining_time(place_id)
+        }
 
     # Open-Meteo：未来24小时逐小时预报
     # 使用 hourly: temperature_2m, precipitation_probability, windspeed_10m
@@ -518,7 +554,7 @@ async def get_weather_hourly(place_id: str):
     # 你的前端现在期望 rain_prob 是 0-1，所以这里把百分比转成 0-1
     rain_prob_01 = [(p or 0) / 100.0 for p in rain_probs]
 
-    return {
+    response_data = {
         "place_id": place_id,
         "time": times,                      # 新增：真实时间
         "hours": list(range(n)),            # 保持：给图表x轴用
@@ -529,7 +565,13 @@ async def get_weather_hourly(place_id: str):
         "lat": lat,
         "lng": lon,
         "fetched_at": datetime.utcnow().isoformat() + "Z",
+        "from_cache": False
     }
+    
+    # 缓存数据
+    location_cache.set(place_id, response_data)
+    
+    return response_data
 
 
 
@@ -585,6 +627,10 @@ async def ai_analysis(payload: dict):
         "place_name": "天津市区",
         "city": "天津"
     }
+    
+    缓存策略：
+    - 同一地点 10 分钟内返回缓存的分析结果
+    - 避免频繁调用 API 和 LLM
     """
     from app.agents.weather_agent import get_weather_agent
     from app.agents.rule_based_analyzer import RuleBasedAnalyzer
@@ -599,6 +645,17 @@ async def ai_analysis(payload: dict):
             )
         
         place = PLACE_BY_ID[place_id]
+        
+        # 检查缓存：如果有有效的缓存，直接返回
+        cache_key = f"ai_analysis_{place_id}"
+        cached_analysis = location_cache.get(cache_key)
+        if cached_analysis is not None:
+            remaining_time = location_cache.get_remaining_time(cache_key)
+            return {
+                **cached_analysis,
+                "from_cache": True,
+                "cache_remaining_seconds": remaining_time
+            }
         
         # 获取最新天气数据
         weather_resp = await fetch_weather_data(place_id)
@@ -644,14 +701,20 @@ async def ai_analysis(payload: dict):
             )
             analysis_method = "rule"
         
-        return {
+        response_data = {
             "place_id": place_id,
             "place_name": place.get("name"),
             "city": place.get("city"),
             "analysis": analysis.dict(),
             "analysis_method": analysis_method,  # 新增：标记分析方法
-            "generated_at": datetime.now().isoformat()
+            "generated_at": datetime.now().isoformat(),
+            "from_cache": False
         }
+        
+        # 缓存分析结果
+        location_cache.set(cache_key, response_data)
+        
+        return response_data
         
     except Exception as e:
         print(f"[Error] {str(e)}")
@@ -711,3 +774,50 @@ async def fetch_weather_data(place_id: str) -> dict:
         "lng": lon,
         "fetched_at": datetime.utcnow().isoformat() + "Z",
     }
+
+
+# ========== 缓存调试接口 ==========
+
+@app.get("/api/cache/stats")
+async def get_cache_stats():
+    """
+    获取缓存统计信息
+    
+    返回：
+    {
+        "total_cached": 缓存的地点数量,
+        "ttl_seconds": 缓存有效期（秒）,
+        "cached_places": {
+            "place_id": {
+                "place_id": "p1",
+                "cached_at": "2026-01-24T12:34:56.123456",
+                "age_seconds": 30,
+                "remaining_seconds": 570,
+                "is_valid": true
+            }
+        }
+    }
+    """
+    return location_cache.export_stats()
+
+
+@app.get("/api/cache/clear")
+async def clear_cache(place_id: str = None):
+    """
+    清除缓存
+    
+    参数：
+    - place_id: 可选，指定要清除的地点ID。如不指定则清除所有缓存
+    
+    返回：
+    {
+        "message": "缓存已清除",
+        "place_id": "p1" 或 null （如果清除所有）
+    }
+    """
+    if place_id:
+        location_cache.clear(place_id)
+        return {"message": f"Cache cleared for place_id={place_id}", "place_id": place_id}
+    else:
+        location_cache.clear_all()
+        return {"message": "All caches cleared", "place_id": None}

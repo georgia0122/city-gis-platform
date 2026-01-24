@@ -1,5 +1,27 @@
 # 📚 城市出行 GIS 平台 - 完整文档索引
 
+## 🚀 启动方式
+
+### 开发模式（推荐）
+```bash
+uvicorn app.main:app --reload
+```
+- 支持热重载，代码修改后自动重启
+- 访问地址: http://127.0.0.1:8000
+
+### Docker 模式（演示 / 部署）
+```bash
+# 构建镜像
+docker build -t city-gis-platform .
+
+# 运行容器
+docker run -p 8000:8000 city-gis-platform
+```
+- 适用于生产环境部署
+- 容器化运行，环境一致性更好
+
+---
+
 ## 🚀 快速导航
 
 ### 🎯 根据需求选择文档
