@@ -16,7 +16,13 @@ import os
 import json
 from typing import Optional
 
-from app.models.schemas import User, UserCreate
+from app.models.schemas import (
+    User, 
+    UserCreate,
+    TravelPlanningRequest,
+    TravelPlanningResponse,
+    WeatherData
+)
 from app.utils.auth import (
     get_password_hash,
     verify_password,
@@ -354,6 +360,18 @@ async def alerts_page(request: Request):
     })
 
 
+@app.get("/travel-planning", response_class=HTMLResponse)
+async def travel_planning_page(request: Request):
+    """智能出行规划页面"""
+    user = await get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("travel_planning.html", {
+        "request": request,
+        "user": user
+    })
+
+
 @app.get("/api/places")
 def get_places():
     return PLACES
@@ -502,7 +520,93 @@ async def get_ai_brief(lat: float, lng: float, city: str):
     return response_data
 
 
-@app.get("/api/weather_hourly")
+@app.post("/api/travel-planning")
+async def plan_travel(
+    lat: float,
+    lng: float,
+    city: str,
+    travel_request: TravelPlanningRequest
+):
+    """
+    智能出行规划API
+    
+    基于天气情况为用户规划最优出行方案，包括：
+    - 推荐出行方式（地铁、公交、自驾、步行、骑车）
+    - 推荐路线和时间
+    - 路况预测
+    - 天气影响分析
+    - 出行建议
+    
+    参数：
+    - lat, lng, city: 地理位置信息
+    - travel_request: 包含 origin, destination, preferred_time, preferred_modes 等信息
+    
+    返回：
+    TravelPlanningResponse 对象，包含完整的出行方案建议
+    """
+    from app.agents.travel_planner_agent import get_travel_planner_agent
+    
+    try:
+        # 获取天气数据
+        url = "https://api.open-meteo.com/v1/forecast"
+        params = {
+            "latitude": lat,
+            "longitude": lng,
+            "current": "temperature_2m,precipitation,wind_speed_10m,relative_humidity_2m",
+            "hourly": "temperature_2m,precipitation_probability,wind_speed_10m",
+            "timezone": "Asia/Shanghai",
+            "forecast_days": 1
+        }
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, params=params, timeout=10.0)
+            data = resp.json()
+        
+        current = data.get("current", {})
+        hourly = data.get("hourly", {})
+        
+        # 构建天气数据对象
+        weather_data = WeatherData(
+            place_name=city,
+            city=city,
+            current_temp=current.get("temperature_2m", 0),
+            rain_probability=max(0, min(1, current.get("precipitation", 0) / 100)),
+            wind_speed=current.get("wind_speed_10m", 0),
+            hourly_temps=hourly.get("temperature_2m", [])[:24],
+            hourly_rain_probs=[max(0, min(1, p / 100)) for p in hourly.get("precipitation_probability", [])[:24]],
+            hourly_winds=hourly.get("wind_speed_10m", [])[:24],
+            current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
+        
+        # 额外的天气属性（如果API返回）
+        if "relative_humidity_2m" in current:
+            weather_data.humidity = current["relative_humidity_2m"]
+        
+        # 调用出行规划Agent
+        travel_planner = get_travel_planner_agent()
+        travel_response = await travel_planner.plan_travel(
+            travel_request=travel_request,
+            weather_data=weather_data,
+            traffic_info={
+                "current_traffic": "moderate",
+                "congestion_index": 0.5
+            }
+        )
+        
+        return travel_response.dict()
+        
+    except Exception as e:
+        print(f"[Travel Planning Error] {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Travel planning failed: {str(e)}"
+        )
+
+
+
 async def get_weather_hourly(place_id: str):
     place = PLACE_BY_ID.get(place_id)
     if not place:
