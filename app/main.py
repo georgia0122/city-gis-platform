@@ -607,29 +607,38 @@ async def plan_travel(
 
 
 
-async def get_weather_hourly(place_id: str):
-    place = PLACE_BY_ID.get(place_id)
-    if not place:
-        return {"error": f"unknown place_id: {place_id}"}
+async def get_weather_hourly(place_id: str = None, lat: float = None, lng: float = None):
+    # 优先根据 place_id 获取地点
+    place = None
+    if place_id and place_id in PLACE_BY_ID:
+        place = PLACE_BY_ID.get(place_id)
+        lat = place["lat"]
+        lng = place["lng"]
+    
+    # 如果没有找到预设地点，检查是否直接提供了经纬度
+    if not place and (lat is None or lng is None):
+        return JSONResponse(
+            {"error": f"Invalid location parameters. Provide valid place_id or lat/lng. Got place_id={place_id}"},
+            status_code=400
+        )
 
-    lat = place["lat"]
-    lon = place["lng"]
+    # 缓存键：如果是预设地点用 ID，否则用经纬度组合
+    cache_key = place_id if (place_id and place_id in PLACE_BY_ID) else f"custom_{lat}_{lng}"
     
     # 检查缓存
-    cached_data = location_cache.get(place_id)
+    cached_data = location_cache.get(cache_key)
     if cached_data is not None:
         return {
             **cached_data,
             "from_cache": True,
-            "cache_remaining_seconds": location_cache.get_remaining_time(place_id)
+            "cache_remaining_seconds": location_cache.get_remaining_time(cache_key)
         }
 
     # Open-Meteo：未来24小时逐小时预报
-    # 使用 hourly: temperature_2m, precipitation_probability, windspeed_10m
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
-        "longitude": lon,
+        "longitude": lng,
         "hourly": "temperature_2m,precipitation_probability,windspeed_10m",
         "forecast_days": 2,
         "timezone": "auto",
@@ -667,13 +676,13 @@ async def get_weather_hourly(place_id: str):
         "wind_mps": [round(w / 3.6, 1) for w in winds],  # Open-Meteo windspeed_10m 默认 km/h，转 m/s，保留1位小数
         "source": "open-meteo",
         "lat": lat,
-        "lng": lon,
+        "lng": lng,
         "fetched_at": datetime.utcnow().isoformat() + "Z",
         "from_cache": False
     }
     
     # 缓存数据
-    location_cache.set(place_id, response_data)
+    location_cache.set(cache_key, response_data)
     
     return response_data
 
@@ -722,19 +731,6 @@ async def travel_advice(payload: dict):
 async def ai_analysis(payload: dict):
     """
     AI Agent 分析路由
-    
-    优先使用 AI 分析，失败时自动降级到规则-based 分析
-    
-    请求体：
-    {
-        "place_id": "p1",
-        "place_name": "天津市区",
-        "city": "天津"
-    }
-    
-    缓存策略：
-    - 同一地点 10 分钟内返回缓存的分析结果
-    - 避免频繁调用 API 和 LLM
     """
     from app.agents.weather_agent import get_weather_agent
     from app.agents.rule_based_analyzer import RuleBasedAnalyzer
@@ -742,16 +738,28 @@ async def ai_analysis(payload: dict):
     
     try:
         place_id = payload.get("place_id")
-        if not place_id or place_id not in PLACE_BY_ID:
+        place_name = payload.get("place_name", "未知地点")
+        city = payload.get("city", "")
+        lat = payload.get("lat")
+        lng = payload.get("lng")
+        
+        # 获取位置坐标
+        if place_id and place_id in PLACE_BY_ID:
+            place = PLACE_BY_ID[place_id]
+            lat = place["lat"]
+            lng = place["lng"]
+            place_name = place["name"]
+            city = place["city"]
+        
+        if lat is None or lng is None:
             return JSONResponse(
-                {"error": f"Unknown place_id: {place_id}"},
+                {"error": "Missing coordinates (lat/lng) or valid place_id"},
                 status_code=400
             )
         
-        place = PLACE_BY_ID[place_id]
+        # 缓存键：如果是预设地点用 ID，否则用经纬度组合
+        cache_key = f"ai_analysis_{place_id}" if (place_id and place_id in PLACE_BY_ID) else f"ai_analysis_custom_{lat}_{lng}"
         
-        # 检查缓存：如果有有效的缓存，直接返回
-        cache_key = f"ai_analysis_{place_id}"
         cached_analysis = location_cache.get(cache_key)
         if cached_analysis is not None:
             remaining_time = location_cache.get_remaining_time(cache_key)
@@ -762,14 +770,14 @@ async def ai_analysis(payload: dict):
             }
         
         # 获取最新天气数据
-        weather_resp = await fetch_weather_data(place_id)
+        weather_resp = await fetch_weather_data(place_id, lat, lng)
         if "error" in weather_resp:
             return JSONResponse(weather_resp, status_code=400)
         
         # 构建 WeatherData
         weather_data = WeatherData(
-            place_name=place.get("name", "Unknown"),
-            city=place.get("city", "Unknown"),
+            place_name=place_name,
+            city=city,
             current_temp=weather_resp.get("temp_c", [20.0])[0],
             rain_probability=weather_resp.get("rain_prob", [0.3])[0],
             wind_speed=weather_resp.get("wind_mps", [3.0])[0],
@@ -807,8 +815,8 @@ async def ai_analysis(payload: dict):
         
         response_data = {
             "place_id": place_id,
-            "place_name": place.get("name"),
-            "city": place.get("city"),
+            "place_name": place_name,
+            "city": city,
             "analysis": analysis.dict(),
             "analysis_method": analysis_method,  # 新增：标记分析方法
             "generated_at": datetime.now().isoformat(),
@@ -832,19 +840,20 @@ async def ai_analysis(payload: dict):
         )
 
 
-async def fetch_weather_data(place_id: str) -> dict:
-    """获取天气数据（复用现有逻辑）"""
-    place = PLACE_BY_ID.get(place_id)
-    if not place:
-        return {"error": f"unknown place_id: {place_id}"}
+async def fetch_weather_data(place_id: str = None, lat: float = None, lng: float = None) -> dict:
+    """获取天气数据（支持 ID 或 坐标）"""
+    if place_id and place_id in PLACE_BY_ID:
+        place = PLACE_BY_ID.get(place_id)
+        lat = place["lat"]
+        lng = place["lng"]
     
-    lat = place["lat"]
-    lon = place["lng"]
+    if lat is None or lng is None:
+        return {"error": "Missing coordinates"}
     
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
-        "longitude": lon,
+        "longitude": lng,
         "hourly": "temperature_2m,precipitation_probability,windspeed_10m",
         "forecast_days": 2,
         "timezone": "auto",

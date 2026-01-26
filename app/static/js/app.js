@@ -24,38 +24,59 @@ function setAdviceText(text) {
 setAdviceText("🔄 正在自动获取您的位置并生成 AI 出行建议...");
 
 function updateChart(hours, temp, rainProb, wind) {
+  // 确保数据是数组，防止报错
+  const hArr = Array.isArray(hours) ? hours : [];
+  const tArr = Array.isArray(temp) ? temp : [];
+  const rArr = Array.isArray(rainProb) ? rainProb : [];
+  const wArr = Array.isArray(wind) ? wind : [];
+
   chart.setOption({
     tooltip: { trigger: "axis" },
     legend: { data: ["Temp(°C)", "RainProb", "Wind(m/s)"] },
-    xAxis: { type: "category", data: hours.map(h => `${h}h`) },
+    xAxis: { type: "category", data: hArr.map(h => `${h}h`) },
     yAxis: [{ type: "value" }, { type: "value" }],
     series: [
-      { name: "Temp(°C)", type: "line", data: temp, yAxisIndex: 0, smooth: true },
-      { name: "RainProb", type: "line", data: rainProb.map(x => Math.round(x * 100)), yAxisIndex: 1, smooth: true },
-      { name: "Wind(m/s)", type: "line", data: wind.map(x => (Math.round(x * 10) / 10)), yAxisIndex: 0, smooth: true },
+      { name: "Temp(°C)", type: "line", data: tArr, yAxisIndex: 0, smooth: true },
+      { name: "RainProb", type: "line", data: rArr.map(x => Math.round(x * 100)), yAxisIndex: 1, smooth: true },
+      { name: "Wind(m/s)", type: "line", data: wArr.map(x => (Math.round(x * 10) / 10)), yAxisIndex: 0, smooth: true },
     ]
   });
 }
 
 async function selectPlace(p) {
-  selectedPlace = p;
-  placeNameEl.textContent = p.name + (p.city ? ` (${p.city})` : "");
-  recTextEl.textContent = "—";
-  setAdviceText("正在加载趋势数据…");
-  btnAdvice.disabled = true;
+  try {
+    selectedPlace = p;
+    placeNameEl.textContent = p.name + (p.city ? ` (${p.city})` : "");
+    recTextEl.textContent = "—";
+    setAdviceText("正在加载趋势数据…");
+    btnAdvice.disabled = true;
 
-  if (map) {
-    map.setView([p.lat, p.lng], 13);
+    if (map) {
+      map.setView([p.lat, p.lng], 13);
+    }
+
+    // 同时发送 ID 和坐标，增强兼容性
+    const url = `/api/weather_hourly?place_id=${encodeURIComponent(p.id)}&lat=${p.lat}&lng=${p.lng}`;
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    latestRainProb = data.rain_prob?.[0] ?? 0.0;
+
+    rainTextEl.textContent = `${Math.round(latestRainProb * 100)}%`;
+    updateChart(data.hours, data.temp_c, data.rain_prob, data.wind_mps);
+
+    setAdviceText('趋势已加载。点击"生成出行建议"。');
+    btnAdvice.disabled = false;
+  } catch (error) {
+    console.error('Select place error:', error);
+    setAdviceText(`❌ 加载失败: ${error.message}`);
+    updateChart([], [], [], []);
+    btnAdvice.disabled = true;
   }
-
-  const data = await fetch(`/api/weather_hourly?place_id=${encodeURIComponent(p.id)}`).then(r => r.json());
-  latestRainProb = data.rain_prob?.[0] ?? 0.0;
-
-  rainTextEl.textContent = `${Math.round(latestRainProb * 100)}%`;
-  updateChart(data.hours, data.temp_c, data.rain_prob, data.wind_mps);
-
-  setAdviceText('趋势已加载。点击"生成出行建议"。');
-  btnAdvice.disabled = false;
 }
 
 async function loadPlacesAndInitMap() {
@@ -225,7 +246,9 @@ btnAdvice.addEventListener("click", async () => {
       body: JSON.stringify({
         place_id: selectedPlace.id,
         place_name: selectedPlace.name,
-        city: selectedPlace.city
+        city: selectedPlace.city,
+        lat: selectedPlace.lat,
+        lng: selectedPlace.lng
       })
     }).then(r => r.json());
 
@@ -324,10 +347,7 @@ async function loadAlertStats() {
   }
 }
 
-loadPlacesAndInitMap().then(() => {
-  // 地图加载完成后，自动尝试获取用户位置
-  autoLocateUser();
-}).catch(err => {
+loadPlacesAndInitMap().catch(err => {
   console.error(err);
   setAdviceText("加载失败，请查看控制台报错。");
 });
@@ -710,7 +730,9 @@ async function triggerAIAnalysis() {
       body: JSON.stringify({
         place_id: selectedPlace.id,
         place_name: selectedPlace.name,
-        city: selectedPlace.city
+        city: selectedPlace.city,
+        lat: selectedPlace.lat,
+        lng: selectedPlace.lng
       })
     }).then(r => r.json());
 
