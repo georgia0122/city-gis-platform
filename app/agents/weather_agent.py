@@ -11,11 +11,11 @@ from app.utils.llm import get_llm_provider
 SYSTEM_PROMPT = """你是一个专业的气象决策分析助手。你的任务是基于实时天气数据，为用户提供科学、可靠的出行建议。
 
 你需要：
-1. 分析温度、降雨概率、风速等多维度气象数据
-2. 识别潜在的天气风险
+1. 分析温度、降雨概率、风速、UV指数等多维度气象数据
+2. 识别潜在的天气风险（包括紫外线风险）
 3. 给出明确的出行建议（GO/CAUTION/AVOID）
 4. 推荐最优出行时间
-5. 提供具体可执行的建议
+5. 提供具体可执行的建议（包括防晒措施）
 
 你必须始终返回有效的JSON格式，包含以下字段：
 - recommendation: "GO" | "CAUTION" | "AVOID"
@@ -31,7 +31,9 @@ SYSTEM_PROMPT = """你是一个专业的气象决策分析助手。你的任务�
 - 降雨概率 50-70%：MEDIUM风险
 - 风速 > 8 m/s：HIGH风险
 - 风速 5-8 m/s：MEDIUM风险
-- 温度过高(>35°C)或过低(<-10°C)：MEDIUM风险"""
+- 温度过高(>35°C)或过低(<-10°C)：MEDIUM风险
+- UV指数 ≥ 8：HIGH风险（需要强烈防护）
+- UV指数 6-7：MEDIUM风险（需要防护）"""
 
 
 PROMPT_TEMPLATE = """基于以下天气数据，请进行详细的出行决策分析：
@@ -44,6 +46,7 @@ PROMPT_TEMPLATE = """基于以下天气数据，请进行详细的出行决策�
 当前气温：{current_temp}°C
 降雨概率：{rain_probability}%
 风速：{wind_speed} m/s
+{uv_info}
 
 【24小时趋势】
 气温变化：{hourly_temps}°C
@@ -61,6 +64,22 @@ class WeatherAgent:
     
     def prepare_prompt(self, weather_data: WeatherData) -> str:
         """将天气数据转换为Prompt"""
+        # 准备UV指数信息
+        uv_info = ""
+        if weather_data.max_uv is not None:
+            uv_level = ""
+            if weather_data.max_uv < 3:
+                uv_level = "低"
+            elif weather_data.max_uv < 6:
+                uv_level = "中等"
+            elif weather_data.max_uv < 8:
+                uv_level = "高"
+            elif weather_data.max_uv < 11:
+                uv_level = "很高"
+            else:
+                uv_level = "极高"
+            uv_info = f"UV指数：{weather_data.max_uv:.1f} ({uv_level})"
+        
         return PROMPT_TEMPLATE.format(
             place_name=weather_data.place_name,
             city=weather_data.city,
@@ -68,6 +87,7 @@ class WeatherAgent:
             current_temp=round(weather_data.current_temp, 1),
             rain_probability=round(weather_data.rain_probability * 100),
             wind_speed=round(weather_data.wind_speed, 1),
+            uv_info=uv_info,
             hourly_temps=", ".join(
                 [f"{t:.1f}" for t in weather_data.hourly_temps[:6]]
             ),

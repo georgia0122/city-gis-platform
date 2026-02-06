@@ -23,22 +23,24 @@ function setAdviceText(text) {
 // 初始显示提示
 setAdviceText("🔄 正在自动获取您的位置并生成 AI 出行建议...");
 
-function updateChart(hours, temp, rainProb, wind) {
+function updateChart(hours, temp, rainProb, wind, uvIndex) {
   // 确保数据是数组，防止报错
   const hArr = Array.isArray(hours) ? hours : [];
   const tArr = Array.isArray(temp) ? temp : [];
   const rArr = Array.isArray(rainProb) ? rainProb : [];
   const wArr = Array.isArray(wind) ? wind : [];
+  const uvArr = Array.isArray(uvIndex) ? uvIndex : [];
 
   chart.setOption({
     tooltip: { trigger: "axis" },
-    legend: { data: ["Temp(°C)", "RainProb", "Wind(m/s)"] },
+    legend: { data: ["Temp(°C)", "RainProb", "Wind(m/s)", "UV指数"] },
     xAxis: { type: "category", data: hArr.map(h => `${h}h`) },
     yAxis: [{ type: "value" }, { type: "value" }],
     series: [
       { name: "Temp(°C)", type: "line", data: tArr, yAxisIndex: 0, smooth: true },
       { name: "RainProb", type: "line", data: rArr.map(x => Math.round(x * 100)), yAxisIndex: 1, smooth: true },
       { name: "Wind(m/s)", type: "line", data: wArr.map(x => (Math.round(x * 10) / 10)), yAxisIndex: 0, smooth: true },
+      { name: "UV指数", type: "line", data: uvArr, yAxisIndex: 0, smooth: true, lineStyle: { color: '#f59e0b' }, itemStyle: { color: '#f59e0b' } },
     ]
   });
 }
@@ -67,14 +69,33 @@ async function selectPlace(p) {
     latestRainProb = data.rain_prob?.[0] ?? 0.0;
 
     rainTextEl.textContent = `${Math.round(latestRainProb * 100)}%`;
-    updateChart(data.hours, data.temp_c, data.rain_prob, data.wind_mps);
+    
+    // 更新UV指数显示
+    const uvTextEl = document.getElementById("uvText");
+    if (uvTextEl && data.current_uv !== undefined) {
+      uvTextEl.textContent = data.current_uv.toFixed(1);
+    }
+    
+    // 更新防晒建议
+    const sunProtectionEl = document.getElementById("sunProtection");
+    if (sunProtectionEl && data.sun_protection) {
+      const sp = data.sun_protection;
+      sunProtectionEl.innerHTML = `
+        <div style="padding: 12px; background: ${sp.color}22; border-left: 4px solid ${sp.color}; border-radius: 4px; margin-top: 8px;">
+          <div style="font-weight: 600; color: ${sp.color}; margin-bottom: 4px;">☀️ ${sp.level} (UV ${data.max_uv.toFixed(1)})</div>
+          <div style="font-size: 13px; color: #333;">${sp.advice}</div>
+        </div>
+      `;
+    }
+    
+    updateChart(data.hours, data.temp_c, data.rain_prob, data.wind_mps, data.uv_index);
 
     setAdviceText('趋势已加载。点击"生成出行建议"。');
     btnAdvice.disabled = false;
   } catch (error) {
     console.error('Select place error:', error);
     setAdviceText(`❌ 加载失败: ${error.message}`);
-    updateChart([], [], [], []);
+    updateChart([], [], [], [], []);
     btnAdvice.disabled = true;
   }
 }
@@ -124,7 +145,7 @@ async function loadPlacesAndInitMap() {
     });
   });
 
-  updateChart([], [], [], []);
+  updateChart([], [], [], [], []);
 }
 
 // 搜索功能 - 支持全球城市搜索

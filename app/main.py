@@ -462,7 +462,7 @@ async def get_ai_brief(lat: float, lng: float, city: str):
         "latitude": lat,
         "longitude": lng,
         "current": "temperature_2m,precipitation,wind_speed_10m",
-        "hourly": "temperature_2m,precipitation_probability,wind_speed_10m",
+        "hourly": "temperature_2m,precipitation_probability,wind_speed_10m,uv_index",
         "timezone": "Asia/Shanghai",
         "forecast_days": 1
     }
@@ -473,6 +473,9 @@ async def get_ai_brief(lat: float, lng: float, city: str):
     
     current = data.get("current", {})
     hourly = data.get("hourly", {})
+    uv_indices = hourly.get("uv_index", [])
+    current_uv = uv_indices[0] if uv_indices else 0
+    max_uv = max(uv_indices[:24]) if uv_indices[:24] else 0
     
     weather_data = WeatherData(
         place_name=city,
@@ -483,7 +486,9 @@ async def get_ai_brief(lat: float, lng: float, city: str):
         hourly_temps=hourly.get("temperature_2m", [])[:24],
         hourly_rain_probs=[p / 100 for p in hourly.get("precipitation_probability", [])[:24]],
         hourly_winds=hourly.get("wind_speed_10m", [])[:24],
-        current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        uv_index=current_uv,
+        max_uv=max_uv
     )
     
     # 尝试使用AI分析，失败则使用规则分析
@@ -553,7 +558,7 @@ async def plan_travel(
             "latitude": lat,
             "longitude": lng,
             "current": "temperature_2m,precipitation,wind_speed_10m,relative_humidity_2m",
-            "hourly": "temperature_2m,precipitation_probability,wind_speed_10m",
+            "hourly": "temperature_2m,precipitation_probability,wind_speed_10m,uv_index",
             "timezone": "Asia/Shanghai",
             "forecast_days": 1
         }
@@ -564,6 +569,9 @@ async def plan_travel(
         
         current = data.get("current", {})
         hourly = data.get("hourly", {})
+        uv_indices = hourly.get("uv_index", [])
+        current_uv = uv_indices[0] if uv_indices else 0
+        max_uv = max(uv_indices[:24]) if uv_indices[:24] else 0
         
         # 构建天气数据对象
         weather_data = WeatherData(
@@ -575,7 +583,9 @@ async def plan_travel(
             hourly_temps=hourly.get("temperature_2m", [])[:24],
             hourly_rain_probs=[max(0, min(1, p / 100)) for p in hourly.get("precipitation_probability", [])[:24]],
             hourly_winds=hourly.get("wind_speed_10m", [])[:24],
-            current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            uv_index=current_uv,
+            max_uv=max_uv
         )
         
         # 额外的天气属性（如果API返回）
@@ -607,6 +617,7 @@ async def plan_travel(
 
 
 
+@app.get("/api/weather_hourly")
 async def get_weather_hourly(place_id: str = None, lat: float = None, lng: float = None):
     # 优先根据 place_id 获取地点
     place = None
@@ -634,12 +645,12 @@ async def get_weather_hourly(place_id: str = None, lat: float = None, lng: float
             "cache_remaining_seconds": location_cache.get_remaining_time(cache_key)
         }
 
-    # Open-Meteo：未来24小时逐小时预报
+    # Open-Meteo：未来24小时逐小时预报（包含UV指数）
     url = "https://api.open-meteo.com/v1/forecast"
     params = {
         "latitude": lat,
         "longitude": lng,
-        "hourly": "temperature_2m,precipitation_probability,windspeed_10m",
+        "hourly": "temperature_2m,precipitation_probability,windspeed_10m,uv_index",
         "forecast_days": 2,
         "timezone": "auto",
     }
@@ -654,18 +665,57 @@ async def get_weather_hourly(place_id: str = None, lat: float = None, lng: float
     temps = hourly.get("temperature_2m", [])
     rain_probs = hourly.get("precipitation_probability", [])
     winds = hourly.get("windspeed_10m", [])
+    uv_indices = hourly.get("uv_index", [])
 
     # 取接下来24条
     # Open-Meteo 给的是按小时的时间字符串，比如 "2026-01-12T10:00"
     # 我们返回给前端 hours=0..23，同时也把 time 原样带回去，后面你想做更精细显示可用
-    n = min(24, len(times), len(temps), len(rain_probs), len(winds))
+    n = min(24, len(times), len(temps), len(rain_probs), len(winds), len(uv_indices))
     times = times[:n]
     temps = temps[:n]
     rain_probs = rain_probs[:n]
     winds = winds[:n]
+    uv_indices = uv_indices[:n]
 
     # 你的前端现在期望 rain_prob 是 0-1，所以这里把百分比转成 0-1
     rain_prob_01 = [(p or 0) / 100.0 for p in rain_probs]
+    
+    # 计算当前UV指数和防晒建议
+    current_uv = uv_indices[0] if uv_indices else 0
+    max_uv = max(uv_indices) if uv_indices else 0
+    
+    def get_sun_protection_advice(uv_index):
+        """根据UV指数生成防晒建议"""
+        if uv_index < 3:
+            return {
+                "level": "低",
+                "color": "#4ade80",
+                "advice": "紫外线较弱，无需特殊防护"
+            }
+        elif uv_index < 6:
+            return {
+                "level": "中等",
+                "color": "#fbbf24",
+                "advice": "建议戴太阳镜，涂抹SPF15+防晒霜"
+            }
+        elif uv_index < 8:
+            return {
+                "level": "高",
+                "color": "#fb923c",
+                "advice": "需要防护！戴帽子、太阳镜，涂抹SPF30+防晒霜，避免正午外出"
+            }
+        elif uv_index < 11:
+            return {
+                "level": "很高",
+                "color": "#f87171",
+                "advice": "强烈防护！必须戴帽子、太阳镜，涂抹SPF50+防晒霜，尽量待在阴凉处"
+            }
+        else:
+            return {
+                "level": "极高",
+                "color": "#dc2626",
+                "advice": "极端紫外线！避免外出，必须全面防护：帽子、太阳镜、长袖衣物、SPF50+防晒霜"
+            }
 
     response_data = {
         "place_id": place_id,
@@ -674,6 +724,10 @@ async def get_weather_hourly(place_id: str = None, lat: float = None, lng: float
         "temp_c": temps,
         "rain_prob": rain_prob_01,
         "wind_mps": [round(w / 3.6, 1) for w in winds],  # Open-Meteo windspeed_10m 默认 km/h，转 m/s，保留1位小数
+        "uv_index": uv_indices,             # 新增：UV指数数组
+        "current_uv": round(current_uv, 1), # 新增：当前UV指数
+        "max_uv": round(max_uv, 1),         # 新增：最大UV指数
+        "sun_protection": get_sun_protection_advice(max_uv),  # 新增：防晒建议
         "source": "open-meteo",
         "lat": lat,
         "lng": lng,
@@ -784,7 +838,9 @@ async def ai_analysis(payload: dict):
             hourly_temps=weather_resp.get("temp_c", [20.0] * 24),
             hourly_rain_probs=weather_resp.get("rain_prob", [0.3] * 24),
             hourly_winds=weather_resp.get("wind_mps", [3.0] * 24),
-            current_time=datetime.now().strftime("%Y-%m-%d %H:%M")
+            current_time=datetime.now().strftime("%Y-%m-%d %H:%M"),
+            uv_index=weather_resp.get("current_uv"),
+            max_uv=weather_resp.get("max_uv")
         )
         
         # 先尝试 AI 分析
@@ -854,7 +910,7 @@ async def fetch_weather_data(place_id: str = None, lat: float = None, lng: float
     params = {
         "latitude": lat,
         "longitude": lng,
-        "hourly": "temperature_2m,precipitation_probability,windspeed_10m",
+        "hourly": "temperature_2m,precipitation_probability,windspeed_10m,uv_index",
         "forecast_days": 2,
         "timezone": "auto",
     }
@@ -872,8 +928,12 @@ async def fetch_weather_data(place_id: str = None, lat: float = None, lng: float
     temps = hourly.get("temperature_2m", [])
     rain_probs = hourly.get("precipitation_probability", [])
     winds = hourly.get("windspeed_10m", [])
+    uv_indices = hourly.get("uv_index", [])
     
-    n = min(24, len(times), len(temps), len(rain_probs), len(winds))
+    n = min(24, len(times), len(temps), len(rain_probs), len(winds), len(uv_indices))
+    
+    current_uv = uv_indices[0] if uv_indices else 0
+    max_uv = max(uv_indices[:n]) if uv_indices[:n] else 0
     
     return {
         "place_id": place_id,
@@ -882,9 +942,12 @@ async def fetch_weather_data(place_id: str = None, lat: float = None, lng: float
         "temp_c": temps[:n],
         "rain_prob": [(p or 0) / 100.0 for p in rain_probs[:n]],
         "wind_mps": [round(w / 3.6, 1) for w in winds[:n]],
+        "uv_index": uv_indices[:n],
+        "current_uv": round(current_uv, 1),
+        "max_uv": round(max_uv, 1),
         "source": "open-meteo",
         "lat": lat,
-        "lng": lon,
+        "lng": lng,
         "fetched_at": datetime.utcnow().isoformat() + "Z",
     }
 

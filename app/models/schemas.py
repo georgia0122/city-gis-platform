@@ -14,6 +14,8 @@ class WeatherData(BaseModel):
     hourly_winds: List[float]
     current_time: str
     humidity: Optional[float] = None  # 可选的湿度字段
+    uv_index: Optional[float] = None  # UV指数
+    max_uv: Optional[float] = None    # 最大UV指数
 
 
 class RiskAssessment(BaseModel):
