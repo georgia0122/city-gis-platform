@@ -5,20 +5,11 @@ let markers = {};
 let userLocationMarker = null;
 let userLocationCircle = null;
 
-// === 聊天相关状态 ===
-let chatHistory = [];  // [{role: "user"|"assistant", content: "..."}]
-let isChatSending = false;
-
 const placeNameEl = document.getElementById("placeName");
 const rainTextEl = document.getElementById("rainText");
 const searchInput = document.getElementById("searchInput");
 const searchResults = document.getElementById("searchResults");
 const searchLoading = document.getElementById("searchLoading");
-const chatMessages = document.getElementById("chatMessages");
-const chatInput = document.getElementById("chatInput");
-const chatSendBtn = document.getElementById("chatSendBtn");
-const chatClearBtn = document.getElementById("chatClearBtn");
-const chatStatus = document.getElementById("chatStatus");
 
 const chart = echarts.init(document.getElementById("chart"));
 
@@ -135,12 +126,8 @@ async function selectPlace(p) {
     
     updateChart(data.hours, data.temp_c, data.rain_prob, data.wind_mps, data.uv_index);
 
-    // 选择位置后自动通知聊天助手
-    addAssistantMessage(`📍 已切换到 **${p.name}${p.city ? ' (' + p.city + ')' : ''}**，天气数据已更新。有什么想问的吗？`);
-
   } catch (error) {
     console.error('Select place error:', error);
-    addAssistantMessage(`❌ 加载天气数据失败: ${error.message}`);
     updateChart([], [], [], [], []);
   }
 }
@@ -299,186 +286,6 @@ searchInput.addEventListener("input", async (e) => {
   }, 500); // 增加到500ms防抖，减少API请求
 });
 
-// ========== AI 智能助手聊天系统 ==========
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
-function formatMessageContent(text) {
-  // 简单 markdown-like 格式化
-  let html = escapeHtml(text);
-  // **粗体**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // 换行
-  html = html.replace(/\n/g, '<br>');
-  return html;
-}
-
-function createMessageEl(role, content) {
-  const wrapper = document.createElement('div');
-  wrapper.className = `chat-message ${role}`;
-
-  const bubble = document.createElement('div');
-  bubble.className = `chat-bubble ${role}`;
-  bubble.innerHTML = formatMessageContent(content);
-
-  const time = document.createElement('div');
-  time.className = 'chat-time';
-  const now = new Date();
-  time.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-  wrapper.appendChild(bubble);
-  wrapper.appendChild(time);
-  return wrapper;
-}
-
-function createTypingIndicator() {
-  const wrapper = document.createElement('div');
-  wrapper.className = 'chat-message assistant';
-  wrapper.id = 'typingIndicator';
-
-  const bubble = document.createElement('div');
-  bubble.className = 'chat-bubble assistant typing';
-  bubble.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
-
-  wrapper.appendChild(bubble);
-  return wrapper;
-}
-
-function scrollChatToBottom() {
-  if (chatMessages) {
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }
-}
-
-function addUserMessage(content) {
-  chatHistory.push({ role: "user", content });
-  const el = createMessageEl("user", content);
-  chatMessages.appendChild(el);
-  scrollChatToBottom();
-}
-
-function addAssistantMessage(content) {
-  chatHistory.push({ role: "assistant", content });
-  const el = createMessageEl("assistant", content);
-  chatMessages.appendChild(el);
-  scrollChatToBottom();
-}
-
-function showTypingIndicator() {
-  const existing = document.getElementById('typingIndicator');
-  if (existing) existing.remove();
-  chatMessages.appendChild(createTypingIndicator());
-  scrollChatToBottom();
-}
-
-function hideTypingIndicator() {
-  const el = document.getElementById('typingIndicator');
-  if (el) el.remove();
-}
-
-async function sendChatMessage(message) {
-  if (!message || isChatSending) return;
-
-  isChatSending = true;
-  chatSendBtn.disabled = true;
-  chatInput.disabled = true;
-  chatStatus.textContent = '思考中...';
-
-  addUserMessage(message);
-  showTypingIndicator();
-
-  try {
-    const body = {
-      message,
-      history: chatHistory.slice(0, -1),  // 不含刚添加的用户消息
-    };
-
-    // 如果有选中的位置，带上坐标
-    if (selectedPlace) {
-      body.lat = selectedPlace.lat;
-      body.lng = selectedPlace.lng;
-      body.place_name = selectedPlace.name + (selectedPlace.city ? ` (${selectedPlace.city})` : '');
-    }
-
-    const resp = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-
-    const data = await resp.json();
-    hideTypingIndicator();
-
-    if (data.error) {
-      addAssistantMessage(`❌ ${data.error}`);
-    } else {
-      addAssistantMessage(data.reply);
-    }
-
-    chatStatus.textContent = data.has_weather_context
-      ? `在线 · 已关联 ${selectedPlace?.name || '当前位置'} 天气数据`
-      : '在线 · 随时为您服务';
-
-  } catch (error) {
-    console.error('Chat error:', error);
-    hideTypingIndicator();
-    addAssistantMessage(`❌ 网络错误，请稍后重试`);
-    chatStatus.textContent = '连接异常';
-  } finally {
-    isChatSending = false;
-    chatSendBtn.disabled = false;
-    chatInput.disabled = false;
-    chatInput.focus();
-  }
-}
-
-// 发送按钮点击
-chatSendBtn.addEventListener("click", () => {
-  const msg = chatInput.value.trim();
-  if (msg) {
-    chatInput.value = "";
-    sendChatMessage(msg);
-  }
-});
-
-// 回车发送
-chatInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" && !e.shiftKey) {
-    e.preventDefault();
-    const msg = chatInput.value.trim();
-    if (msg) {
-      chatInput.value = "";
-      sendChatMessage(msg);
-    }
-  }
-});
-
-// 清空对话
-chatClearBtn.addEventListener("click", () => {
-  chatHistory = [];
-  chatMessages.innerHTML = '';
-  // 重新添加欢迎消息
-  const welcome = createMessageEl("assistant",
-    "对话已清空 🧹\n\n你好！我是 GeoWeather 智能助手，有什么可以帮你的吗？"
-  );
-  chatMessages.appendChild(welcome);
-  chatStatus.textContent = '在线 · 随时为您服务';
-});
-
-// 快捷操作按钮（现代卡片与旧版兼容）
-document.querySelectorAll('.quick-card, .quick-action-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const msg = btn.dataset.msg;
-    if (msg) {
-      sendChatMessage(msg);
-    }
-  });
-});
-
 // 加载预警信息统计
 async function loadAlertStats() {
   try {
@@ -513,7 +320,6 @@ async function loadAlertStats() {
 
 loadPlacesAndInitMap().catch(err => {
   console.error(err);
-  addAssistantMessage("❌ 地图加载失败，请刷新页面重试。");
 });
 
 // 加载预警统计

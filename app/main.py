@@ -495,6 +495,18 @@ async def travel_planning_page(request: Request):
     })
 
 
+@app.get("/ai-chat", response_class=HTMLResponse)
+async def ai_chat_page(request: Request):
+    """AI 智能对话页（独立页，可调节窗口、收起侧栏）"""
+    user = await get_current_user(request)
+    if not user:
+        return RedirectResponse(url="/login")
+    return templates.TemplateResponse("ai_chat.html", {
+        "request": request,
+        "user": user
+    })
+
+
 @app.get("/api/places")
 def get_places():
     return PLACES
