@@ -87,6 +87,46 @@ body { margin: 0; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Robot
   border-right: none;
 }
 
+.chat-sidebar-expand-btn {
+  display: none;
+  position: absolute;
+  top: 20px;
+  left: 16px;
+  z-index: 10;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  background: white;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  transition: all 0.2s;
+  width: 36px;
+  height: 36px;
+}
+
+.chat-sidebar-expand-btn:hover {
+  background: #f8fafc;
+  color: #475569;
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  transform: translateX(2px);
+}
+
+.chat-sidebar-expand-btn svg {
+  flex-shrink: 0;
+}
+
+.chat-card.chat-sidebar-collapsed .chat-sidebar-expand-btn {
+  display: flex;
+}
+
+.chat-card.chat-sidebar-collapsed .chat-main-header {
+  padding-left: 64px;
+}
+
 .chat-sidebar-header {
   display: flex;
   align-items: center;

@@ -193,17 +193,27 @@ document.querySelectorAll(".quick-card, .quick-action-btn").forEach(function (bt
 
 // 对话历史侧栏收起/展开
 var chatSidebarToggle = document.getElementById("chatSidebarToggle");
+var chatSidebarExpandBtn = document.getElementById("chatSidebarExpandBtn");
 var chatCard = document.querySelector(".chat-card");
-if (chatSidebarToggle && chatCard) {
-  chatSidebarToggle.addEventListener("click", function () {
+
+function toggleChatSidebar() {
+  if (chatCard) {
     chatCard.classList.toggle("chat-sidebar-collapsed");
-    var span = chatSidebarToggle.querySelector("span");
+    var span = chatSidebarToggle && chatSidebarToggle.querySelector("span");
     if (span) {
       span.textContent = chatCard.classList.contains("chat-sidebar-collapsed") ? "展开" : "收起";
     }
-    var svg = chatSidebarToggle.querySelector("svg");
+    var svg = chatSidebarToggle && chatSidebarToggle.querySelector("svg");
     if (svg) {
       svg.style.transform = chatCard.classList.contains("chat-sidebar-collapsed") ? "rotate(180deg)" : "none";
     }
-  });
+  }
+}
+
+if (chatSidebarToggle && chatCard) {
+  chatSidebarToggle.addEventListener("click", toggleChatSidebar);
+}
+
+if (chatSidebarExpandBtn && chatCard) {
+  chatSidebarExpandBtn.addEventListener("click", toggleChatSidebar);
 }
