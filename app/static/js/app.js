@@ -11,6 +11,189 @@ const searchInput = document.getElementById("searchInput");
 const searchResults = document.getElementById("searchResults");
 const searchLoading = document.getElementById("searchLoading");
 
+// ========== 搜索历史功能 ==========
+const SEARCH_HISTORY_KEY = 'geoweather_search_history';
+const MAX_HISTORY_ITEMS = 10;
+
+// 获取搜索历史
+function getSearchHistory() {
+  try {
+    const history = localStorage.getItem(SEARCH_HISTORY_KEY);
+    return history ? JSON.parse(history) : [];
+  } catch (error) {
+    console.error('Failed to load search history:', error);
+    return [];
+  }
+}
+
+// 保存搜索历史
+function saveToSearchHistory(place) {
+  try {
+    let history = getSearchHistory();
+    
+    // 移除重复项（基于坐标）
+    history = history.filter(item => 
+      !(Math.abs(item.lat - place.lat) < 0.0001 && Math.abs(item.lng - place.lng) < 0.0001)
+    );
+    
+    // 添加到开头
+    history.unshift({
+      id: place.id,
+      name: place.name,
+      fullName: place.fullName || place.name,
+      lat: place.lat,
+      lng: place.lng,
+      city: place.city || '',
+      country: place.country || '',
+      timestamp: Date.now()
+    });
+    
+    // 限制历史记录数量
+    if (history.length > MAX_HISTORY_ITEMS) {
+      history = history.slice(0, MAX_HISTORY_ITEMS);
+    }
+    
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
+  } catch (error) {
+    console.error('Failed to save search history:', error);
+  }
+}
+
+// 清除搜索历史
+function clearSearchHistory() {
+  try {
+    localStorage.removeItem(SEARCH_HISTORY_KEY);
+    showSearchHistory(); // 刷新显示
+  } catch (error) {
+    console.error('Failed to clear search history:', error);
+  }
+}
+
+// 删除单条历史记录
+function removeFromSearchHistory(index) {
+  try {
+    let history = getSearchHistory();
+    history.splice(index, 1);
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
+    showSearchHistory(); // 刷新显示
+  } catch (error) {
+    console.error('Failed to remove search history item:', error);
+  }
+}
+
+// 显示搜索历史
+function showSearchHistory() {
+  const history = getSearchHistory();
+  
+  if (history.length === 0) {
+    searchResults.innerHTML = '<div style="padding: 12px; color: #999; text-align: center;">暂无搜索历史</div>';
+    return;
+  }
+  
+  searchResults.innerHTML = `
+    <div style="margin-bottom: 8px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 4px 8px;">
+        <div style="font-size: 11px; color: #999; font-weight: 600; text-transform: uppercase;">🕒 搜索历史</div>
+        <button 
+          id="clearHistoryBtn"
+          style="
+            font-size: 11px; 
+            color: #ef4444; 
+            background: none; 
+            border: none; 
+            cursor: pointer; 
+            padding: 2px 6px;
+            border-radius: 3px;
+            transition: background 0.2s;
+          "
+          onmouseover="this.style.background='#fee2e2'"
+          onmouseout="this.style.background='none'"
+        >清空历史</button>
+      </div>
+      ${history.map((item, index) => `
+        <div style="
+          padding: 8px 12px; 
+          cursor: pointer; 
+          border-radius: 4px; 
+          transition: background 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          group;
+        " 
+        class="history-item" 
+        data-index="${index}"
+        data-place='${JSON.stringify(item)}'>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.name}</div>
+            <div style="font-size: 12px; color: #666; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${item.fullName || (item.city ? item.city : '') + (item.country ? ' ' + item.country : '')}</div>
+          </div>
+          <button 
+            class="delete-history-btn"
+            data-index="${index}"
+            style="
+              margin-left: 8px;
+              font-size: 16px;
+              color: #999;
+              background: none;
+              border: none;
+              cursor: pointer;
+              padding: 4px 8px;
+              border-radius: 3px;
+              transition: all 0.2s;
+              opacity: 0.6;
+            "
+            onmouseover="this.style.opacity='1'; this.style.background='#fee2e2'; this.style.color='#ef4444';"
+            onmouseout="this.style.opacity='0.6'; this.style.background='none'; this.style.color='#999';"
+            title="删除此记录"
+          >×</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+  
+  // 绑定历史记录项点击事件
+  document.querySelectorAll('.history-item').forEach(item => {
+    const deleteBtn = item.querySelector('.delete-history-btn');
+    
+    // 阻止删除按钮的点击事件冒泡
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const index = parseInt(deleteBtn.dataset.index);
+        removeFromSearchHistory(index);
+      });
+    }
+    
+    // 历史记录项的hover效果
+    item.addEventListener('mouseenter', () => {
+      item.style.background = '#f3f4f6';
+    });
+    item.addEventListener('mouseleave', () => {
+      item.style.background = '';
+    });
+    
+    // 点击历史记录
+    item.addEventListener('click', async () => {
+      const place = JSON.parse(item.dataset.place);
+      await selectPlace(place);
+      searchInput.value = '';
+      searchResults.innerHTML = '';
+    });
+  });
+  
+  // 绑定清空历史按钮
+  const clearBtn = document.getElementById('clearHistoryBtn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm('确定要清空所有搜索历史吗？')) {
+        clearSearchHistory();
+      }
+    });
+  }
+}
+
 const chart = echarts.init(document.getElementById("chart"));
 
 function updateChart(hours, temp, rainProb, wind, uvIndex) {
@@ -45,6 +228,9 @@ async function selectPlace(p) {
     }
 
     placeNameEl.textContent = p.name + (p.city ? ` (${p.city})` : "");
+    
+    // 保存到搜索历史
+    saveToSearchHistory(p);
 
     if (map) {
       map.setView([p.lat, p.lng], 13);
@@ -182,13 +368,29 @@ async function loadPlacesAndInitMap() {
 
 // 搜索功能 - 支持全球城市搜索
 let searchTimeout = null;
+
+// 输入框获得焦点时显示历史记录
+searchInput.addEventListener("focus", () => {
+  if (!searchInput.value.trim()) {
+    showSearchHistory();
+  }
+});
+
+// 点击搜索框外部时隐藏搜索结果
+document.addEventListener('click', (e) => {
+  const searchBox = document.getElementById('searchBox');
+  if (searchBox && !searchBox.contains(e.target)) {
+    searchResults.innerHTML = '';
+  }
+});
+
 searchInput.addEventListener("input", async (e) => {
   clearTimeout(searchTimeout);
   const query = e.target.value.trim();
   
   searchTimeout = setTimeout(async () => {
     if (!query) {
-      searchResults.innerHTML = "";
+      showSearchHistory(); // 显示历史记录而不是清空
       searchLoading.style.display = "none";
       return;
     }
