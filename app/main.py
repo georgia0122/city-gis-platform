@@ -814,9 +814,14 @@ async def get_weather_hourly(place_id: str = None, lat: float = None, lng: float
     # 你的前端现在期望 rain_prob 是 0-1，所以这里把百分比转成 0-1
     rain_prob_01 = [(p or 0) / 100.0 for p in rain_probs]
     
-    # 计算当前UV指数和防晒建议
-    current_uv = uv_indices[0] if uv_indices else 0
+    # 计算当前时刻的UV指数（根据当前小时）
+    from datetime import datetime
+    current_hour = datetime.now().hour
+    current_uv = uv_indices[current_hour] if current_hour < len(uv_indices) else (uv_indices[0] if uv_indices else 0)
     max_uv = max(uv_indices) if uv_indices else 0
+    
+    # 同样计算当前时刻的降雨概率
+    current_rain_prob = rain_prob_01[current_hour] if current_hour < len(rain_prob_01) else (rain_prob_01[0] if rain_prob_01 else 0)
     
     def get_sun_protection_advice(uv_index):
         """根据UV指数生成防晒建议"""
@@ -857,9 +862,10 @@ async def get_weather_hourly(place_id: str = None, lat: float = None, lng: float
         "hours": list(range(n)),            # 保持：给图表x轴用
         "temp_c": temps,
         "rain_prob": rain_prob_01,
+        "current_rain_prob": round(current_rain_prob, 3),  # 新增：当前时刻降雨概率
         "wind_mps": [round(w / 3.6, 1) for w in winds],  # Open-Meteo windspeed_10m 默认 km/h，转 m/s，保留1位小数
         "uv_index": uv_indices,             # 新增：UV指数数组
-        "current_uv": round(current_uv, 1), # 新增：当前UV指数
+        "current_uv": round(current_uv, 1), # 新增：当前时刻UV指数
         "max_uv": round(max_uv, 1),         # 新增：最大UV指数
         "sun_protection": get_sun_protection_advice(max_uv),  # 新增：防晒建议
         "source": "open-meteo",

@@ -81,7 +81,8 @@ async function selectPlace(p) {
       throw new Error(data.error);
     }
 
-    latestRainProb = data.rain_prob?.[0] ?? 0.0;
+    // 使用当前时刻的降雨概率，如果没有则使用第一个小时的数据
+    latestRainProb = data.current_rain_prob ?? data.rain_prob?.[0] ?? 0.0;
 
     // 更新雨概率显示（带颜色提示）
     const rainPercent = Math.round(latestRainProb * 100);
