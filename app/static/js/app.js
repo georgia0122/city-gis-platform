@@ -83,12 +83,43 @@ async function selectPlace(p) {
 
     latestRainProb = data.rain_prob?.[0] ?? 0.0;
 
-    rainTextEl.textContent = `${Math.round(latestRainProb * 100)}%`;
+    // 更新雨概率显示（带颜色提示）
+    const rainPercent = Math.round(latestRainProb * 100);
+    let rainColor = '#10b981'; // 绿色 - 低
+    let rainDesc = '';
+    if (rainPercent > 70) {
+      rainColor = '#ef4444'; // 红色 - 高
+      rainDesc = '高';
+    } else if (rainPercent > 40) {
+      rainColor = '#f59e0b'; // 橙色 - 中
+      rainDesc = '中等';
+    } else {
+      rainDesc = '低';
+    }
+    rainTextEl.innerHTML = `<span style="color: ${rainColor}; font-weight: 600;">${rainPercent}%</span> <span style="font-size: 11px; color: #6b7280;">(${rainDesc})</span>`;
     
-    // 更新UV指数显示
+    // 更新UV指数显示（带颜色提示）
     const uvTextEl = document.getElementById("uvText");
     if (uvTextEl && data.current_uv !== undefined) {
-      uvTextEl.textContent = data.current_uv.toFixed(1);
+      const uvValue = data.current_uv;
+      let uvColor = '#10b981'; // 绿色 - 低
+      let uvDesc = '低';
+      
+      if (uvValue >= 11) {
+        uvColor = '#dc2626'; // 深红 - 极高
+        uvDesc = '极高';
+      } else if (uvValue >= 8) {
+        uvColor = '#ef4444'; // 红色 - 很高
+        uvDesc = '很高';
+      } else if (uvValue >= 6) {
+        uvColor = '#f59e0b'; // 橙色 - 高
+        uvDesc = '高';
+      } else if (uvValue >= 3) {
+        uvColor = '#fbbf24'; // 黄色 - 中等
+        uvDesc = '中等';
+      }
+      
+      uvTextEl.innerHTML = `<span style="color: ${uvColor}; font-weight: 600;">${uvValue.toFixed(1)}</span> <span style="font-size: 11px; color: #6b7280;">(${uvDesc})</span>`;
     }
     
     // 更新防晒建议
@@ -97,7 +128,7 @@ async function selectPlace(p) {
       const sp = data.sun_protection;
       sunProtectionEl.innerHTML = `
         <div style="padding: 12px; background: ${sp.color}22; border-left: 4px solid ${sp.color}; border-radius: 4px; margin-top: 8px;">
-          <div style="font-weight: 600; color: ${sp.color}; margin-bottom: 4px;">☀️ ${sp.level} (UV ${data.max_uv.toFixed(1)})</div>
+          <div style="font-weight: 600; color: ${sp.color}; margin-bottom: 4px;">☀️ ${sp.level} (当前 ${data.current_uv.toFixed(1)} / 最高 ${data.max_uv.toFixed(1)})</div>
           <div style="font-size: 13px; color: #333;">${sp.advice}</div>
         </div>
       `;
