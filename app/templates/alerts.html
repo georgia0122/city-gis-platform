@@ -244,8 +244,8 @@
           <div class="stat-label">风速 (m/s)</div>
         </div>
         <div class="stat-box" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
-          <div class="stat-value" id="alertCount">0</div>
-          <div class="stat-label">活跃预警</div>
+          <div class="stat-value" id="uvValue">--</div>
+          <div class="stat-label">UV指数</div>
         </div>
       </div>
     </div>
@@ -275,7 +275,10 @@
           <div style="height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
             <div id="windRiskBar" style="height: 100%; background: linear-gradient(90deg, #10b981, #059669); width: 0%; transition: width 0.5s;"></div>
           </div>
-          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;" id="windRiskDesc">计算中...</div>
+          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;">
+            <span id="windRiskDesc">计算中...</span>
+            <span id="windRiskData" style="font-weight: 600; color: #059669;"></span>
+          </div>
         </div>
         
         <!-- 降雨/雪风险 -->
@@ -291,7 +294,10 @@
           <div style="height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
             <div id="rainRiskBar" style="height: 100%; background: linear-gradient(90deg, #3b82f6, #2563eb); width: 0%; transition: width 0.5s;"></div>
           </div>
-          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;" id="rainRiskDesc">计算中...</div>
+          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;">
+            <span id="rainRiskDesc">计算中...</span>
+            <span id="rainRiskData" style="font-weight: 600; color: #2563eb;"></span>
+          </div>
         </div>
         
         <!-- 温度风险 -->
@@ -307,7 +313,29 @@
           <div style="height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
             <div id="tempRiskBar" style="height: 100%; background: linear-gradient(90deg, #f59e0b, #d97706); width: 0%; transition: width 0.5s;"></div>
           </div>
-          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;" id="tempRiskDesc">计算中...</div>
+          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;">
+            <span id="tempRiskDesc">计算中...</span>
+            <span id="tempRiskData" style="font-weight: 600; color: #d97706;"></span>
+          </div>
+        </div>
+        
+        <!-- UV紫外线风险 -->
+        <div style="background: white; border: 2px solid #e5e7eb; padding: 20px; border-radius: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 15px;">
+            <span style="font-size: 24px;">☀️</span>
+            <span style="font-size: 16px; font-weight: 600; color: #1f2937;">UV紫外线风险</span>
+          </div>
+          <div style="display: flex; align-items: baseline; gap: 5px; margin-bottom: 10px;">
+            <span style="font-size: 36px; font-weight: 700; color: #f59e0b;" id="uvRiskScore">0</span>
+            <span style="font-size: 16px; color: #6b7280;">/20分</span>
+          </div>
+          <div style="height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden;">
+            <div id="uvRiskBar" style="height: 100%; background: linear-gradient(90deg, #f59e0b, #ea580c); width: 0%; transition: width 0.5s;"></div>
+          </div>
+          <div style="font-size: 13px; color: #6b7280; margin-top: 8px;">
+            <span id="uvRiskDesc">计算中...</span>
+            <span id="uvRiskData" style="font-weight: 600; color: #ea580c;"></span>
+          </div>
         </div>
       </div>
       
@@ -318,9 +346,10 @@
           <div>💨 风速 >10m/s: 高风险</div>
           <div>🌧️ 降水概率 >70%: 高风险</div>
           <div>🌡️ 温度 <0°C 或 >35°C: 高风险</div>
+          <div>☀️ UV指数 ≥8: 高风险</div>
           <div><strong>总分0-30</strong>: 低风险 ✅</div>
           <div><strong>总分30-60</strong>: 中风险 ⚠️</div>
-          <div><strong>总分60-100</strong>: 高风险 ❌</div>
+          <div><strong>总分60-120</strong>: 高风险 ❌</div>
         </div>
       </div>
     </div>
@@ -388,12 +417,9 @@
       document.getElementById('rainValue').textContent = Math.round(weatherData.rain_probability * 100);
       document.getElementById('windValue').textContent = weatherData.wind_speed.toFixed(1);
       
-      // 计算活跃预警数
-      let alertCount = 0;
-      if (weatherData.rain_probability > 0.7) alertCount++;
-      if (weatherData.wind_speed > 8) alertCount++;
-      if (weatherData.current_temp < 0 || weatherData.current_temp > 35) alertCount++;
-      document.getElementById('alertCount').textContent = alertCount;
+      // 显示UV指数
+      const uvValue = weatherData.max_uv || 0;
+      document.getElementById('uvValue').textContent = uvValue.toFixed(1);
     }
 
     // 更新图表
@@ -406,7 +432,7 @@
       
       trendChart.setOption({
         tooltip: { trigger: 'axis' },
-        legend: { data: ['温度', '降雨概率', '风速'] },
+        legend: { data: ['温度', '降雨概率', '风速', 'UV指数'] },
         grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
         xAxis: { type: 'category', boundaryGap: false, data: hours },
         yAxis: { type: 'value' },
@@ -431,6 +457,13 @@
             data: weatherData.hourly_winds,
             smooth: true,
             itemStyle: { color: '#10b981' }
+          },
+          {
+            name: 'UV指数',
+            type: 'line',
+            data: weatherData.uv_index || [],
+            smooth: true,
+            itemStyle: { color: '#f59e0b' }
           }
         ]
       });
@@ -466,6 +499,7 @@
       const maxRain = Math.max(...weatherData.hourly_rain_probs);
       const maxWind = Math.max(...weatherData.hourly_winds);
       const temp = weatherData.current_temp;
+      const maxUV = weatherData.max_uv || 0;
       
       if (maxRain > 0.7) risks.push({ value: 35, name: '高降雨风险' });
       else if (maxRain > 0.5) risks.push({ value: 20, name: '中等降雨' });
@@ -479,16 +513,22 @@
       else if (temp > 35) risks.push({ value: 25, name: '高温预警' });
       else risks.push({ value: 10, name: '温度适宜' });
       
+      if (maxUV >= 8) risks.push({ value: 20, name: '强紫外线' });
+      else if (maxUV >= 6) risks.push({ value: 12, name: '中等UV' });
+      else if (maxUV >= 3) risks.push({ value: 8, name: '低UV' });
+      else risks.push({ value: 5, name: 'UV安全' });
+      
       return risks;
     }
 
     // 计算风险评分
     function calculateRiskScores() {
-      if (!weatherData) return { windRisk: 0, rainRisk: 0, tempRisk: 0, totalRisk: 0 };
+      if (!weatherData) return { windRisk: 0, rainRisk: 0, tempRisk: 0, uvRisk: 0, totalRisk: 0 };
       
       const maxRain = Math.max(...weatherData.hourly_rain_probs);
       const maxWind = Math.max(...weatherData.hourly_winds);
       const temp = weatherData.current_temp;
+      const maxUV = weatherData.max_uv || 0;
       
       // 风力风险 (0-35分)
       let windRisk = 0;
@@ -541,11 +581,31 @@
         tempDesc = '温度舒适，适宜活动';
       }
       
-      const totalRisk = windRisk + rainRisk + tempRisk;
+      // UV紫外线风险 (0-20分)
+      let uvRisk = 0;
+      let uvDesc = '';
+      if (maxUV >= 11) {
+        uvRisk = 20;
+        uvDesc = '极高UV指数，避免外出';
+      } else if (maxUV >= 8) {
+        uvRisk = 18;
+        uvDesc = '很高UV指数，需强烈防护';
+      } else if (maxUV >= 6) {
+        uvRisk = 12;
+        uvDesc = 'UV指数较高，需要防护';
+      } else if (maxUV >= 3) {
+        uvRisk = 5;
+        uvDesc = 'UV指数中等，建议防护';
+      } else {
+        uvRisk = 2;
+        uvDesc = 'UV指数较低，基本安全';
+      }
+      
+      const totalRisk = windRisk + rainRisk + tempRisk + uvRisk;
       
       return { 
-        windRisk, rainRisk, tempRisk, totalRisk,
-        windDesc, rainDesc, tempDesc
+        windRisk, rainRisk, tempRisk, uvRisk, totalRisk,
+        windDesc, rainDesc, tempDesc, uvDesc
       };
     }
 
@@ -574,16 +634,36 @@
       document.getElementById('windRiskScore').textContent = scores.windRisk;
       document.getElementById('windRiskBar').style.width = ((scores.windRisk / 35) * 100) + '%';
       document.getElementById('windRiskDesc').textContent = scores.windDesc;
+      if (weatherData) {
+        const maxWind = Math.max(...weatherData.hourly_winds);
+        document.getElementById('windRiskData').textContent = ` (${maxWind.toFixed(1)} m/s)`;
+      }
       
       // 更新降水风险
       document.getElementById('rainRiskScore').textContent = scores.rainRisk;
       document.getElementById('rainRiskBar').style.width = ((scores.rainRisk / 40) * 100) + '%';
       document.getElementById('rainRiskDesc').textContent = scores.rainDesc;
+      if (weatherData) {
+        const maxRain = Math.max(...weatherData.hourly_rain_probs);
+        document.getElementById('rainRiskData').textContent = ` (${(maxRain * 100).toFixed(0)}%)`;
+      }
       
       // 更新温度风险
       document.getElementById('tempRiskScore').textContent = scores.tempRisk;
       document.getElementById('tempRiskBar').style.width = ((scores.tempRisk / 25) * 100) + '%';
       document.getElementById('tempRiskDesc').textContent = scores.tempDesc;
+      if (weatherData) {
+        document.getElementById('tempRiskData').textContent = ` (${weatherData.current_temp.toFixed(1)}°C)`;
+      }
+      
+      // 更新UV风险
+      document.getElementById('uvRiskScore').textContent = scores.uvRisk;
+      document.getElementById('uvRiskBar').style.width = ((scores.uvRisk / 20) * 100) + '%';
+      document.getElementById('uvRiskDesc').textContent = scores.uvDesc;
+      if (weatherData) {
+        const maxUV = weatherData.max_uv || 0;
+        document.getElementById('uvRiskData').textContent = ` (UV ${maxUV.toFixed(1)})`;
+      }
     }
 
     // 更新预警列表
@@ -636,6 +716,22 @@
           level: 'high',
           title: '🔥 高温预警',
           desc: `当前温度 ${temp}°C，请注意防暑降温`
+        });
+      }
+      
+      // UV紫外线预警
+      const maxUV = weatherData.max_uv || 0;
+      if (maxUV >= 8) {
+        alerts.push({
+          level: 'high',
+          title: '☀️ 强紫外线预警',
+          desc: `UV指数 ${maxUV.toFixed(1)}，需全面防晒：帽子、太阳镜、SPF50+防晒霜`
+        });
+      } else if (maxUV >= 6) {
+        alerts.push({
+          level: 'medium',
+          title: '🕶️ 紫外线提示',
+          desc: `UV指数 ${maxUV.toFixed(1)}，建议戴帽子、太阳镜，涂抹SPF30+防晒霜`
         });
       }
       

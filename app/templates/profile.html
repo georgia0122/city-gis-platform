@@ -282,18 +282,16 @@
         <div class="profile-info">
           <div>
             <div class="stat-label">今日查询次数</div>
-            <div class="stat-value">12</div>
+            <div class="stat-value" id="todayQueries">-</div>
           </div>
           <div>
             <div class="stat-label">本月查询次数</div>
-            <div class="stat-value">245</div>
+            <div class="stat-value" id="monthQueries">-</div>
           </div>
           <div>
             <div class="stat-label">常用地点</div>
-            <div style="color: #1f2937; margin-top: 10px;">
-              <div style="padding: 4px 0;">• 天津市区</div>
-              <div style="padding: 4px 0;">• 北京市区</div>
-              <div style="padding: 4px 0;">• 上海市区</div>
+            <div id="frequentLocations" style="color: #1f2937; margin-top: 10px;">
+              <div style="padding: 4px 0; color: #9ca3af;">加载中...</div>
             </div>
           </div>
         </div>
@@ -308,11 +306,11 @@
           </div>
           <div class="info-item">
             <span class="info-label">邮箱</span>
-            <span class="info-value">{{ user.email or '未设置' }}</span>
+            <span class="info-value" id="userEmail">{{ user.email or '未设置' }}</span>
           </div>
           <div class="info-item">
-            <span class="info-label">城市</span>
-            <span class="info-value">天津市</span>
+            <span class="info-label">姓名</span>
+            <span class="info-value" id="userFullName">{{ user.full_name or '未设置' }}</span>
           </div>
           <div class="info-item">
             <span class="info-label">账户状态</span>
@@ -326,11 +324,11 @@
         <div class="profile-info">
           <div class="info-item">
             <span class="info-label">API 额度</span>
-            <span class="info-value">10000/10000</span>
+            <span class="info-value" id="apiQuota">-</span>
           </div>
           <div class="info-item">
             <span class="info-label">存储空间</span>
-            <span class="info-value">50MB/100MB</span>
+            <span class="info-value" id="storageQuota">-</span>
           </div>
           <div class="info-item">
             <span class="info-label">数据保留期</span>
@@ -381,15 +379,15 @@
       <div class="profile-info">
         <div class="info-item">
           <span class="info-label">上次登录</span>
-          <span class="info-value">2026-01-12 14:32:00</span>
+          <span class="info-value" id="lastLogin">-</span>
         </div>
         <div class="info-item">
-          <span class="info-label">登录设备</span>
-          <span class="info-value">Windows 10</span>
+          <span class="info-label">注册时间</span>
+          <span class="info-value" id="createdAt">{{ user.created_at if user.created_at else '未知' }}</span>
         </div>
         <div class="info-item">
-          <span class="info-label">登录位置</span>
-          <span class="info-value">天津, 中国</span>
+          <span class="info-label">总查询次数</span>
+          <span class="info-value" id="totalQueries">-</span>
         </div>
       </div>
       <div class="btn-group">
@@ -462,6 +460,54 @@
   </div>
 
   <script>
+    // 加载用户统计数据
+    async function loadUserStats() {
+      try {
+        const response = await fetch('/api/user-stats');
+        if (response.ok) {
+          const data = await response.json();
+          
+          // 更新统计数据
+          document.getElementById('todayQueries').textContent = data.stats.today_queries || 0;
+          document.getElementById('monthQueries').textContent = data.stats.month_queries || 0;
+          document.getElementById('totalQueries').textContent = data.stats.total_queries || 0;
+          
+          // 更新常用地点
+          const frequentLocsDiv = document.getElementById('frequentLocations');
+          if (data.stats.frequent_locations && data.stats.frequent_locations.length > 0) {
+            frequentLocsDiv.innerHTML = data.stats.frequent_locations
+              .map(loc => `<div style="padding: 4px 0;">• ${loc.name} (${loc.count}次)</div>`)
+              .join('');
+          } else {
+            frequentLocsDiv.innerHTML = '<div style="padding: 4px 0; color: #9ca3af;">暂无数据</div>';
+          }
+          
+          // 更新API额度
+          const apiUsed = data.stats.api_quota_used || 0;
+          const apiTotal = data.stats.api_quota_total || 10000;
+          document.getElementById('apiQuota').textContent = `${apiUsed}/${apiTotal}`;
+          
+          // 更新存储空间
+          const storageUsed = (data.stats.storage_used_mb || 0).toFixed(1);
+          const storageTotal = data.stats.storage_total_mb || 100;
+          document.getElementById('storageQuota').textContent = `${storageUsed}MB/${storageTotal}MB`;
+          
+          // 更新个人信息
+          document.getElementById('userEmail').textContent = data.email || '未设置';
+          document.getElementById('userFullName').textContent = data.full_name || '未设置';
+          document.getElementById('lastLogin').textContent = data.last_login || '未知';
+          document.getElementById('createdAt').textContent = data.created_at || '未知';
+        } else {
+          console.error('Failed to load user stats');
+        }
+      } catch (error) {
+        console.error('Error loading user stats:', error);
+      }
+    }
+
+    // 页面加载时获取数据
+    window.addEventListener('DOMContentLoaded', loadUserStats);
+
     // 修改密码模态框
     function showChangePasswordModal() {
       document.getElementById('changePasswordModal').style.display = 'flex';

@@ -4,6 +4,17 @@
     "email": "",
     "full_name": null,
     "hashed_password": "$pbkdf2-sha256$29000$LiXEWAtBaE3J.d/7H6MUwg$lIGsXZqwf6Iac7qp.Rouahup1O2wWW87lEGZhRstRnw",
-    "created_at": "2026-01-17 03:59:12"
+    "created_at": "2026-01-17 03:59:12",
+    "stats": {
+      "today_queries": 0,
+      "month_queries": 0,
+      "total_queries": 0,
+      "frequent_locations": [],
+      "last_query_date": null,
+      "api_quota_used": 0,
+      "api_quota_total": 10000,
+      "storage_used_mb": 0.5,
+      "storage_total_mb": 100
+    }
   }
 }

@@ -6,7 +6,6 @@ let userLocationMarker = null;
 let userLocationCircle = null;
 
 const placeNameEl = document.getElementById("placeName");
-const recTextEl = document.getElementById("recText");
 const rainTextEl = document.getElementById("rainText");
 const btnAdvice = document.getElementById("btnAdvice");
 const adviceBox = document.getElementById("adviceBox");
@@ -48,13 +47,29 @@ function updateChart(hours, temp, rainProb, wind, uvIndex) {
 async function selectPlace(p) {
   try {
     selectedPlace = p;
+
+    // 安全检查：确保DOM元素存在
+    if (!placeNameEl || !rainTextEl || !btnAdvice) {
+      throw new Error('页面元素未正确加载，请刷新页面');
+    }
+
     placeNameEl.textContent = p.name + (p.city ? ` (${p.city})` : "");
-    recTextEl.textContent = "—";
     setAdviceText("正在加载趋势数据…");
     btnAdvice.disabled = true;
 
     if (map) {
       map.setView([p.lat, p.lng], 13);
+    }
+
+    // 记录用户查询
+    try {
+      await fetch('/api/record-query', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ location: p.name })
+      });
+    } catch (error) {
+      console.log('Failed to record query:', error);
     }
 
     // 同时发送 ID 和坐标，增强兼容性
@@ -282,8 +297,6 @@ btnAdvice.addEventListener("click", async () => {
     const analysis = resp.analysis;
     const analysisMethod = resp.analysis_method || "rule";  // 获取分析方法
     
-    recTextEl.textContent = analysis.recommendation || "—";
-
     const methodLabel = analysisMethod === "ai" ? "🤖 AI 分析" : "📊 规则分析";
     const methodNote = analysisMethod === "ai" ? "" : " (AI 已降级)";
     
@@ -353,10 +366,21 @@ btnAdvice.addEventListener("click", async () => {
 // 加载预警信息统计
 async function loadAlertStats() {
   try {
-    const alerts = await fetch('/api/alerts').then(r => r.json());
+    const response = await fetch('/api/alerts');
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const alerts = await response.json();
+
+    // 确保返回的是数组
+    if (!Array.isArray(alerts)) {
+      console.warn('Alerts API returned non-array data:', alerts);
+      throw new Error('Invalid alerts data format');
+    }
+
     const activeAlerts = alerts.filter(a => a.status === 'active');
     const alertCountEl = document.getElementById('alertCount');
-    
+
     if (activeAlerts.length > 0) {
       alertCountEl.textContent = `当前有 ${activeAlerts.length} 条活跃预警，点击查看详情`;
     } else {
@@ -364,7 +388,10 @@ async function loadAlertStats() {
     }
   } catch (error) {
     console.error('Failed to load alerts:', error);
-    document.getElementById('alertCount').textContent = '点击查看预警信息';
+    const alertCountEl = document.getElementById('alertCount');
+    if (alertCountEl) {
+      alertCountEl.textContent = '点击查看预警信息';
+    }
   }
 }
 
@@ -766,8 +793,6 @@ async function triggerAIAnalysis() {
     const analysis = resp.analysis;
     const analysisMethod = resp.analysis_method || "rule";
     
-    recTextEl.textContent = analysis.recommendation || "—";
-
     const methodLabel = analysisMethod === "ai" ? "🤖 AI 分析" : "📊 规则分析";
     const methodNote = analysisMethod === "ai" ? "" : " (AI 已降级)";
     

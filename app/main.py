@@ -113,6 +113,19 @@ async def register(user_in: UserCreate):
     user_dict.pop("password")
     user_dict["hashed_password"] = hashed_password
     user_dict["created_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    user_dict["last_login"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 初始化统计数据
+    user_dict["stats"] = {
+        "today_queries": 0,
+        "month_queries": 0,
+        "total_queries": 0,
+        "frequent_locations": [],
+        "last_query_date": None,
+        "api_quota_used": 0,
+        "api_quota_total": 10000,
+        "storage_used_mb": 0.5,
+        "storage_total_mb": 100
+    }
 
     users_db[user_in.username] = user_dict
     save_users(users_db)
@@ -129,6 +142,11 @@ async def login(username: str = Form(...), password: str = Form(...)):
 
     if not verify_password(password, user_data["hashed_password"]):
         raise HTTPException(status_code=400, detail="用户名或密码错误")
+
+    # 更新登录时间
+    user_data["last_login"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    users_db[username] = user_data
+    save_users(users_db)
 
     access_token = create_access_token(data={"sub": username})
 
@@ -289,6 +307,111 @@ async def delete_account(request: Request):
     return response
 
 
+@app.get("/api/user-stats")
+async def get_user_stats(request: Request):
+    """获取用户统计数据"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+
+    user_data = users_db.get(user.username)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 确保存在stats字段，为老用户初始化
+    if "stats" not in user_data:
+        user_data["stats"] = {
+            "today_queries": 0,
+            "month_queries": 0,
+            "total_queries": 0,
+            "frequent_locations": [],
+            "last_query_date": None,
+            "api_quota_used": 0,
+            "api_quota_total": 10000,
+            "storage_used_mb": 0.5,
+            "storage_total_mb": 100
+        }
+        users_db[user.username] = user_data
+        save_users(users_db)
+
+    # 检查是否需要重置今日查询次数
+    today = datetime.now().strftime("%Y-%m-%d")
+    last_query_date = user_data["stats"].get("last_query_date")
+    if last_query_date and last_query_date != today:
+        user_data["stats"]["today_queries"] = 0
+
+    # 返回统计数据
+    return {
+        "username": user.username,
+        "email": user_data.get("email", ""),
+        "full_name": user_data.get("full_name"),
+        "created_at": user_data.get("created_at"),
+        "last_login": user_data.get("last_login"),
+        "stats": user_data["stats"]
+    }
+
+
+@app.post("/api/record-query")
+async def record_query(request: Request, location: str = Body(...)):
+    """记录用户查询"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+
+    user_data = users_db.get(user.username)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+    # 初始化stats如果不存在
+    if "stats" not in user_data:
+        user_data["stats"] = {
+            "today_queries": 0,
+            "month_queries": 0,
+            "total_queries": 0,
+            "frequent_locations": [],
+            "last_query_date": None,
+            "api_quota_used": 0,
+            "api_quota_total": 10000,
+            "storage_used_mb": 0.5,
+            "storage_total_mb": 100
+        }
+
+    # 更新查询次数
+    today = datetime.now().strftime("%Y-%m-%d")
+    if user_data["stats"].get("last_query_date") != today:
+        user_data["stats"]["today_queries"] = 0
+    
+    user_data["stats"]["today_queries"] += 1
+    user_data["stats"]["month_queries"] += 1
+    user_data["stats"]["total_queries"] += 1
+    user_data["stats"]["last_query_date"] = today
+    user_data["stats"]["api_quota_used"] += 1
+
+    # 更新常用地点
+    frequent_locs = user_data["stats"]["frequent_locations"]
+    
+    # 查找是否已存在该地点
+    found = False
+    for loc in frequent_locs:
+        if loc["name"] == location:
+            loc["count"] += 1
+            found = True
+            break
+    
+    if not found:
+        frequent_locs.append({"name": location, "count": 1})
+    
+    # 按次数排序并只保留前5个
+    frequent_locs.sort(key=lambda x: x["count"], reverse=True)
+    user_data["stats"]["frequent_locations"] = frequent_locs[:5]
+
+    # 保存数据
+    users_db[user.username] = user_data
+    save_users(users_db)
+
+    return {"message": "查询已记录", "stats": user_data["stats"]}
+
+
 # 扩展城市/地点列表
 PLACES = [
     {"id": "p1", "name": "天津市区", "lat": 39.0851, "lng": 117.1994, "city": "天津"},
@@ -391,6 +514,13 @@ def search_places(q: str = ""):
     return results
 
 
+@app.get("/api/alerts")
+def get_alerts():
+    """获取预警信息列表"""
+    # 返回空数组，实际应用中可以从数据库或缓存中获取预警数据
+    return []
+
+
 @app.get("/api/daily_brief")
 def get_daily_brief():
     """获取日报简报（已废弃）"""
@@ -408,7 +538,7 @@ async def get_weather(lat: float, lng: float):
         "latitude": lat,
         "longitude": lng,
         "current": "temperature_2m,precipitation,wind_speed_10m",
-        "hourly": "temperature_2m,precipitation_probability,wind_speed_10m",
+        "hourly": "temperature_2m,precipitation_probability,wind_speed_10m,uv_index",
         "timezone": "Asia/Shanghai",
         "forecast_days": 1
     }
@@ -419,6 +549,7 @@ async def get_weather(lat: float, lng: float):
     
     current = data.get("current", {})
     hourly = data.get("hourly", {})
+    uv_indices = hourly.get("uv_index", [])
     
     return {
         "current_temp": current.get("temperature_2m", 0),
@@ -426,7 +557,10 @@ async def get_weather(lat: float, lng: float):
         "wind_speed": current.get("wind_speed_10m", 0),
         "hourly_temps": hourly.get("temperature_2m", [])[:24],
         "hourly_rain_probs": [p / 100 for p in hourly.get("precipitation_probability", [])[:24]],
-        "hourly_winds": hourly.get("wind_speed_10m", [])[:24]
+        "hourly_winds": hourly.get("wind_speed_10m", [])[:24],
+        "uv_index": uv_indices[:24],
+        "current_uv": uv_indices[0] if uv_indices else 0,
+        "max_uv": max(uv_indices[:24]) if uv_indices[:24] else 0
     }
 
 
