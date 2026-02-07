@@ -5,22 +5,22 @@ let markers = {};
 let userLocationMarker = null;
 let userLocationCircle = null;
 
+// === 聊天相关状态 ===
+let chatHistory = [];  // [{role: "user"|"assistant", content: "..."}]
+let isChatSending = false;
+
 const placeNameEl = document.getElementById("placeName");
 const rainTextEl = document.getElementById("rainText");
-const btnAdvice = document.getElementById("btnAdvice");
-const adviceBox = document.getElementById("adviceBox");
 const searchInput = document.getElementById("searchInput");
 const searchResults = document.getElementById("searchResults");
 const searchLoading = document.getElementById("searchLoading");
+const chatMessages = document.getElementById("chatMessages");
+const chatInput = document.getElementById("chatInput");
+const chatSendBtn = document.getElementById("chatSendBtn");
+const chatClearBtn = document.getElementById("chatClearBtn");
+const chatStatus = document.getElementById("chatStatus");
 
 const chart = echarts.init(document.getElementById("chart"));
-
-function setAdviceText(text) {
-  adviceBox.textContent = text;
-}
-
-// 初始显示提示
-setAdviceText("🔄 正在自动获取您的位置并生成 AI 出行建议...");
 
 function updateChart(hours, temp, rainProb, wind, uvIndex) {
   // 确保数据是数组，防止报错
@@ -49,13 +49,11 @@ async function selectPlace(p) {
     selectedPlace = p;
 
     // 安全检查：确保DOM元素存在
-    if (!placeNameEl || !rainTextEl || !btnAdvice) {
+    if (!placeNameEl || !rainTextEl) {
       throw new Error('页面元素未正确加载，请刷新页面');
     }
 
     placeNameEl.textContent = p.name + (p.city ? ` (${p.city})` : "");
-    setAdviceText("正在加载趋势数据…");
-    btnAdvice.disabled = true;
 
     if (map) {
       map.setView([p.lat, p.lng], 13);
@@ -137,13 +135,13 @@ async function selectPlace(p) {
     
     updateChart(data.hours, data.temp_c, data.rain_prob, data.wind_mps, data.uv_index);
 
-    setAdviceText('趋势已加载。点击"生成出行建议"。');
-    btnAdvice.disabled = false;
+    // 选择位置后自动通知聊天助手
+    addAssistantMessage(`📍 已切换到 **${p.name}${p.city ? ' (' + p.city + ')' : ''}**，天气数据已更新。有什么想问的吗？`);
+
   } catch (error) {
     console.error('Select place error:', error);
-    setAdviceText(`❌ 加载失败: ${error.message}`);
+    addAssistantMessage(`❌ 加载天气数据失败: ${error.message}`);
     updateChart([], [], [], [], []);
-    btnAdvice.disabled = true;
   }
 }
 
@@ -301,98 +299,184 @@ searchInput.addEventListener("input", async (e) => {
   }, 500); // 增加到500ms防抖，减少API请求
 });
 
-btnAdvice.addEventListener("click", async () => {
-  if (!selectedPlace) return;
+// ========== AI 智能助手聊天系统 ==========
 
-  btnAdvice.disabled = true;
-  setAdviceText("🤔 正在生成建议…");
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+function formatMessageContent(text) {
+  // 简单 markdown-like 格式化
+  let html = escapeHtml(text);
+  // **粗体**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // 换行
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+function createMessageEl(role, content) {
+  const wrapper = document.createElement('div');
+  wrapper.className = `chat-message ${role}`;
+
+  const bubble = document.createElement('div');
+  bubble.className = `chat-bubble ${role}`;
+  bubble.innerHTML = formatMessageContent(content);
+
+  const time = document.createElement('div');
+  time.className = 'chat-time';
+  const now = new Date();
+  time.textContent = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+  wrapper.appendChild(bubble);
+  wrapper.appendChild(time);
+  return wrapper;
+}
+
+function createTypingIndicator() {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'chat-message assistant';
+  wrapper.id = 'typingIndicator';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble assistant typing';
+  bubble.innerHTML = '<span class="typing-dot"></span><span class="typing-dot"></span><span class="typing-dot"></span>';
+
+  wrapper.appendChild(bubble);
+  return wrapper;
+}
+
+function scrollChatToBottom() {
+  if (chatMessages) {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+}
+
+function addUserMessage(content) {
+  chatHistory.push({ role: "user", content });
+  const el = createMessageEl("user", content);
+  chatMessages.appendChild(el);
+  scrollChatToBottom();
+}
+
+function addAssistantMessage(content) {
+  chatHistory.push({ role: "assistant", content });
+  const el = createMessageEl("assistant", content);
+  chatMessages.appendChild(el);
+  scrollChatToBottom();
+}
+
+function showTypingIndicator() {
+  const existing = document.getElementById('typingIndicator');
+  if (existing) existing.remove();
+  chatMessages.appendChild(createTypingIndicator());
+  scrollChatToBottom();
+}
+
+function hideTypingIndicator() {
+  const el = document.getElementById('typingIndicator');
+  if (el) el.remove();
+}
+
+async function sendChatMessage(message) {
+  if (!message || isChatSending) return;
+
+  isChatSending = true;
+  chatSendBtn.disabled = true;
+  chatInput.disabled = true;
+  chatStatus.textContent = '思考中...';
+
+  addUserMessage(message);
+  showTypingIndicator();
 
   try {
-    const resp = await fetch("/api/ai_analysis", {
+    const body = {
+      message,
+      history: chatHistory.slice(0, -1),  // 不含刚添加的用户消息
+    };
+
+    // 如果有选中的位置，带上坐标
+    if (selectedPlace) {
+      body.lat = selectedPlace.lat;
+      body.lng = selectedPlace.lng;
+      body.place_name = selectedPlace.name + (selectedPlace.city ? ` (${selectedPlace.city})` : '');
+    }
+
+    const resp = await fetch("/api/chat", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        place_id: selectedPlace.id,
-        place_name: selectedPlace.name,
-        city: selectedPlace.city,
-        lat: selectedPlace.lat,
-        lng: selectedPlace.lng
-      })
-    }).then(r => r.json());
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-    if (resp.error) {
-      setAdviceText(`❌ 分析失败: ${resp.error}`);
-      btnAdvice.disabled = false;
-      return;
+    const data = await resp.json();
+    hideTypingIndicator();
+
+    if (data.error) {
+      addAssistantMessage(`❌ ${data.error}`);
+    } else {
+      addAssistantMessage(data.reply);
     }
 
-    const analysis = resp.analysis;
-    const analysisMethod = resp.analysis_method || "rule";  // 获取分析方法
-    
-    const methodLabel = analysisMethod === "ai" ? "🤖 AI 分析" : "📊 规则分析";
-    const methodNote = analysisMethod === "ai" ? "" : " (AI 已降级)";
-    
-    // 推荐等级的样式
-    let recEmoji = "✈️";
-    if (analysis.recommendation === "AVOID") {
-      recEmoji = "❌";
-    } else if (analysis.recommendation === "CAUTION") {
-      recEmoji = "⚠️";
-    } else if (analysis.recommendation === "GO") {
-      recEmoji = "✅";
-    }
-    
-    const lines = [];
-    
-    // ===== 第一部分：出行建议（顶部突出显示）=====
-    lines.push(`${recEmoji} 出行建议: ${analysis.recommendation}${methodNote}`);
-    
-    // 最佳时间（出行建议下方）
-    if (analysis.optimal_time) {
-      lines.push(`⏰ 最佳时间段: ${analysis.optimal_time}`);
-    }
-    
-    // 分析方法和置信度
-    const confidenceEmoji = analysis.confidence_score >= 0.8 ? "✅" : (analysis.confidence_score >= 0.6 ? "👍" : "📌");
-    lines.push(`${confidenceEmoji} 分析方法: ${methodLabel} | 置信度: ${Math.round(analysis.confidence_score * 100)}%`);
-    
-    lines.push(""); // 空行
-    
-    // ===== 第二部分：综合评价 =====
-    lines.push(`📝 评价: ${analysis.summary}`);
-    lines.push(""); // 空行
-    
-    // ===== 第三部分：建议 =====
-    if (analysis.suggestions && analysis.suggestions.length > 0) {
-      lines.push("💡 行动建议:");
-      analysis.suggestions.forEach((s, idx) => {
-        const num = idx + 1;
-        lines.push(`   ${num}. ${s}`);
-      });
-      lines.push(""); // 空行
-    }
-    
-    // ===== 第四部分：风险评估 =====
-    if (analysis.risks && analysis.risks.length > 0) {
-      lines.push("⚠️ 风险评估:");
-      analysis.risks.forEach(risk => {
-        const severityEmoji = {
-          'HIGH': '🔴',
-          'MEDIUM': '🟡',
-          'LOW': '🟢'
-        }[risk.severity] || '◯';
-        lines.push(`   ${severityEmoji} ${risk.risk_type} (${risk.severity})`);
-        lines.push(`      └─ ${risk.evidence}`);
-      });
-    }
+    chatStatus.textContent = data.has_weather_context
+      ? `在线 · 已关联 ${selectedPlace?.name || '当前位置'} 天气数据`
+      : '在线 · 随时为您服务';
 
-    setAdviceText(lines.join("\n"));
   } catch (error) {
-    console.error('Analysis error:', error);
-    setAdviceText(`❌ 分析失败: ${error.message}`);
+    console.error('Chat error:', error);
+    hideTypingIndicator();
+    addAssistantMessage(`❌ 网络错误，请稍后重试`);
+    chatStatus.textContent = '连接异常';
+  } finally {
+    isChatSending = false;
+    chatSendBtn.disabled = false;
+    chatInput.disabled = false;
+    chatInput.focus();
   }
+}
 
-  btnAdvice.disabled = false;
+// 发送按钮点击
+chatSendBtn.addEventListener("click", () => {
+  const msg = chatInput.value.trim();
+  if (msg) {
+    chatInput.value = "";
+    sendChatMessage(msg);
+  }
+});
+
+// 回车发送
+chatInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    const msg = chatInput.value.trim();
+    if (msg) {
+      chatInput.value = "";
+      sendChatMessage(msg);
+    }
+  }
+});
+
+// 清空对话
+chatClearBtn.addEventListener("click", () => {
+  chatHistory = [];
+  chatMessages.innerHTML = '';
+  // 重新添加欢迎消息
+  const welcome = createMessageEl("assistant",
+    "对话已清空 🧹\n\n你好！我是 GeoWeather 智能助手，有什么可以帮你的吗？"
+  );
+  chatMessages.appendChild(welcome);
+  chatStatus.textContent = '在线 · 随时为您服务';
+});
+
+// 快捷操作按钮（现代卡片与旧版兼容）
+document.querySelectorAll('.quick-card, .quick-action-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const msg = btn.dataset.msg;
+    if (msg) {
+      sendChatMessage(msg);
+    }
+  });
 });
 
 // 加载预警信息统计
@@ -429,7 +513,7 @@ async function loadAlertStats() {
 
 loadPlacesAndInitMap().catch(err => {
   console.error(err);
-  setAdviceText("加载失败，请查看控制台报错。");
+  addAssistantMessage("❌ 地图加载失败，请刷新页面重试。");
 });
 
 // 加载预警统计
@@ -546,12 +630,8 @@ async function autoLocateUser() {
     placeNameEl.textContent = `我的位置 (${shortAddress})`;
     await selectPlace(userPlace);
     
-    // 自动触发 AI 分析生成建议
-    locationStatus.textContent = '正在生成 AI 出行建议...';
-    await triggerAIAnalysis();
-    
     // 更新最终状态
-    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${shortAddress} - AI 建议已生成`;
+    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${shortAddress} - 已定位`;
     
   } catch (error) {
     console.error('Auto location error:', error);
@@ -573,9 +653,6 @@ async function autoLocateUser() {
     
     locationStatus.textContent = errorMsg;
     locationStatus.style.color = '#ef4444';
-    
-    // 定位失败时，显示默认提示
-    setAdviceText('自动定位失败，请点击"定位我的位置"按钮手动定位，或搜索/点击地图上的地点查看天气。');
   } finally {
     if (locateBtn) {
       locateBtn.disabled = false;
@@ -762,12 +839,8 @@ async function getUserLocation() {
     placeNameEl.textContent = `我的位置 (${shortAddress})`;
     await selectPlace(userPlace);
     
-    // 自动触发 AI 分析生成建议
-    locationStatus.textContent = '正在生成 AI 出行建议...';
-    await triggerAIAnalysis();
-    
     // 更新最终状态
-    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${shortAddress} - AI 建议已生成`;
+    locationStatus.innerHTML = `<span style="color: #22c55e;">✓</span> ${shortAddress} - 已定位`;
     
   } catch (error) {
     console.error('Geolocation error:', error);
@@ -794,94 +867,6 @@ async function getUserLocation() {
     locateBtn.disabled = false;
     locateBtn.innerHTML = '📍 定位我的位置';
   }
-}
-
-// 触发 AI 分析的函数（复用 btnAdvice 的逻辑）
-async function triggerAIAnalysis() {
-  if (!selectedPlace) return;
-
-  btnAdvice.disabled = true;
-  setAdviceText("🤔 正在生成建议…");
-
-  try {
-    const resp = await fetch("/api/ai_analysis", {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        place_id: selectedPlace.id,
-        place_name: selectedPlace.name,
-        city: selectedPlace.city,
-        lat: selectedPlace.lat,
-        lng: selectedPlace.lng
-      })
-    }).then(r => r.json());
-
-    if (resp.error) {
-      setAdviceText(`❌ 分析失败: ${resp.error}`);
-      btnAdvice.disabled = false;
-      return;
-    }
-
-    const analysis = resp.analysis;
-    const analysisMethod = resp.analysis_method || "rule";
-    
-    const methodLabel = analysisMethod === "ai" ? "🤖 AI 分析" : "📊 规则分析";
-    const methodNote = analysisMethod === "ai" ? "" : " (AI 已降级)";
-    
-    let recEmoji = "✈️";
-    if (analysis.recommendation === "AVOID") {
-      recEmoji = "❌";
-    } else if (analysis.recommendation === "CAUTION") {
-      recEmoji = "⚠️";
-    } else if (analysis.recommendation === "GO") {
-      recEmoji = "✅";
-    }
-    
-    const lines = [];
-    
-    lines.push(`${recEmoji} 出行建议: ${analysis.recommendation}${methodNote}`);
-    
-    if (analysis.optimal_time) {
-      lines.push(`⏰ 最佳时间段: ${analysis.optimal_time}`);
-    }
-    
-    const confidenceEmoji = analysis.confidence_score >= 0.8 ? "✅" : (analysis.confidence_score >= 0.6 ? "👍" : "📌");
-    lines.push(`${confidenceEmoji} 分析方法: ${methodLabel} | 置信度: ${Math.round(analysis.confidence_score * 100)}%`);
-    
-    lines.push("");
-    
-    lines.push(`📝 评价: ${analysis.summary}`);
-    lines.push("");
-    
-    if (analysis.suggestions && analysis.suggestions.length > 0) {
-      lines.push("💡 行动建议:");
-      analysis.suggestions.forEach((s, idx) => {
-        const num = idx + 1;
-        lines.push(`   ${num}. ${s}`);
-      });
-      lines.push("");
-    }
-    
-    if (analysis.risks && analysis.risks.length > 0) {
-      lines.push("⚠️ 风险评估:");
-      analysis.risks.forEach(risk => {
-        const severityEmoji = {
-          'HIGH': '🔴',
-          'MEDIUM': '🟡',
-          'LOW': '🟢'
-        }[risk.severity] || '◯';
-        lines.push(`   ${severityEmoji} ${risk.risk_type} (${risk.severity})`);
-        lines.push(`      └─ ${risk.evidence}`);
-      });
-    }
-
-    setAdviceText(lines.join("\n"));
-  } catch (error) {
-    console.error('Analysis error:', error);
-    setAdviceText(`❌ 分析失败: ${error.message}`);
-  }
-
-  btnAdvice.disabled = false;
 }
 
 // 绑定定位按钮事件

@@ -1137,3 +1137,100 @@ async def clear_cache(place_id: str = None):
     else:
         location_cache.clear_all()
         return {"message": "All caches cleared", "place_id": None}
+
+
+# ========== AI 智能助手聊天接口 ==========
+
+CHAT_SYSTEM_PROMPT = """你是 GeoWeather 智能助手，一个专业、友好的气象与出行顾问。你可以：
+1. 回答用户关于天气、出行、穿衣、防晒等各类问题
+2. 结合实时天气数据为用户提供个性化建议
+3. 进行日常闲聊，但始终保持专业与友好
+4. 用简洁明了的中文回复，适当使用 emoji 增加亲和力
+
+当用户提供了天气数据上下文时，请基于真实数据给出精准建议。
+回复请控制在 300 字以内，除非用户需要详细分析。"""
+
+
+@app.post("/api/chat")
+async def chat_with_ai(payload: dict):
+    """
+    AI 智能助手聊天接口
+    支持多轮对话，自动注入天气上下文
+    """
+    from app.utils.llm import get_llm_provider
+
+    try:
+        user_message = payload.get("message", "").strip()
+        history = payload.get("history", [])  # [{role, content}, ...]
+        lat = payload.get("lat")
+        lng = payload.get("lng")
+        place_name = payload.get("place_name", "")
+
+        if not user_message:
+            return JSONResponse({"error": "消息不能为空"}, status_code=400)
+
+        # 构建天气上下文
+        weather_context = ""
+        if lat is not None and lng is not None:
+            try:
+                weather_resp = await fetch_weather_data(lat=lat, lng=lng)
+                if "error" not in weather_resp:
+                    current_temp = weather_resp.get("temp_c", [0])[0]
+                    current_rain = weather_resp.get("rain_prob", [0])[0]
+                    current_wind = weather_resp.get("wind_mps", [0])[0]
+                    current_uv = weather_resp.get("current_uv", 0)
+                    max_uv = weather_resp.get("max_uv", 0)
+
+                    # 未来6小时趋势
+                    temps_6h = weather_resp.get("temp_c", [])[:6]
+                    rain_6h = weather_resp.get("rain_prob", [])[:6]
+
+                    weather_context = f"""
+【当前天气数据 - {place_name or '用户位置'}】
+- 气温: {current_temp:.1f}°C
+- 降雨概率: {current_rain*100:.0f}%
+- 风速: {current_wind:.1f} m/s
+- 当前UV指数: {current_uv:.1f}
+- 今日最高UV: {max_uv:.1f}
+- 未来6小时气温趋势: {', '.join(f'{t:.1f}°C' for t in temps_6h)}
+- 未来6小时降雨概率: {', '.join(f'{r*100:.0f}%' for r in rain_6h)}
+"""
+            except Exception as e:
+                print(f"[Chat] Failed to fetch weather context: {e}")
+
+        # 构建消息列表
+        system_content = CHAT_SYSTEM_PROMPT
+        if weather_context:
+            system_content += f"\n\n以下是用户当前位置的实时天气数据，请在回答时参考：\n{weather_context}"
+
+        messages = [{"role": "system", "content": system_content}]
+
+        # 添加历史对话（最多保留最近10轮）
+        recent_history = history[-20:] if len(history) > 20 else history
+        for msg in recent_history:
+            if msg.get("role") in ("user", "assistant"):
+                messages.append({
+                    "role": msg["role"],
+                    "content": msg["content"]
+                })
+
+        # 添加当前用户消息
+        messages.append({"role": "user", "content": user_message})
+
+        # 调用 LLM
+        llm = get_llm_provider()
+        reply = await llm.chat(messages, json_mode=False)
+
+        return {
+            "reply": reply,
+            "has_weather_context": bool(weather_context),
+        }
+
+    except Exception as e:
+        print(f"[Chat Error] {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return JSONResponse(
+            {"error": f"聊天服务暂时不可用: {str(e)}"},
+            status_code=500
+        )

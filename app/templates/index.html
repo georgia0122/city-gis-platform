@@ -113,7 +113,6 @@
           <div class="pill">☀️ UV指数：<span id="uvText">—</span></div>
         </div>
         <div id="sunProtection"></div>
-        <button id="btnAdvice" class="btn" disabled>生成出行建议</button>
       </div>
 
       <div class="card">
@@ -121,9 +120,74 @@
         <div id="chart" class="chart"></div>
       </div>
 
-      <div class="card">
-        <div class="card-title">AI 建议</div>
-        <div id="adviceBox" class="advice">🔄 正在自动获取您的位置并生成 AI 出行建议...</div>
+      <div class="card chat-card">
+        <div class="chat-header-modern">
+          <div class="chat-header-modern-left">
+            <span class="chat-avatar-modern">🤖</span>
+            <div>
+              <div class="chat-title-modern">AI 智能助手</div>
+              <div class="chat-status-modern" id="chatStatus">在线 · 随时为您服务</div>
+            </div>
+          </div>
+          <button class="chat-clear-btn-modern" id="chatClearBtn" title="清空对话" aria-label="清空对话">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z"/><path d="M10 11v6M14 11v6"/></svg>
+          </button>
+        </div>
+        <div class="chat-greeting" id="chatGreeting">有什么可以帮你的，{{ user.username }}？</div>
+        <div class="chat-messages" id="chatMessages">
+          <div class="chat-message assistant">
+            <div class="chat-bubble assistant">
+              你好！我是 GeoWeather 智能助手 🌤️<br><br>
+              我可以帮你：<br>
+              • 分析当前天气状况<br>
+              • 提供出行建议<br>
+              • 推荐最佳出行时间<br>
+              • 评估天气风险<br>
+              • 回答你的任何问题<br><br>
+              请在地图上选择一个位置，我能为你提供更精准的分析！
+            </div>
+          </div>
+        </div>
+        <div class="chat-input-area-modern">
+          <div class="chat-input-bar">
+            <button type="button" class="chat-add-btn" title="附加" aria-label="附加">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            </button>
+            <input type="text" id="chatInput" class="chat-input-modern" placeholder="想问什么都可以..." autocomplete="off" />
+            <button type="button" class="chat-mic-btn" title="语音输入" aria-label="语音">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 013 3v8a3 3 0 01-6 0V4a3 3 0 013-3z"/><path d="M19 10v2a7 7 0 01-14 0v-2M12 19v4M8 23h8"/></svg>
+            </button>
+            <button id="chatSendBtn" class="chat-send-pill" title="发送">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2L15 22L11 13L2 9L22 2Z"/></svg>
+            </button>
+          </div>
+          <div class="chat-quick-cards" id="chatQuickActions">
+            <button type="button" class="quick-card" data-msg="帮我用文字描述一下当前天气图景">
+              <span class="quick-card-icon quick-card-icon-landscape">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/><circle cx="12" cy="12" r="4"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+              </span>
+              <span class="quick-card-label">天气图景</span>
+            </button>
+            <button type="button" class="quick-card" data-msg="简单介绍一下当前天气情况">
+              <span class="quick-card-icon quick-card-icon-book">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 004 19.5v-15A2.5 2.5 0 016.5 2z"/><path d="M8 7h8M8 11h8"/></svg>
+              </span>
+              <span class="quick-card-label">了解天气</span>
+            </button>
+            <button type="button" class="quick-card" data-msg="今天穿什么衣服合适？">
+              <span class="quick-card-icon quick-card-icon-pencil">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              </span>
+              <span class="quick-card-label">穿衣建议</span>
+            </button>
+            <button type="button" class="quick-card" data-msg="给我今天的出行分步建议">
+              <span class="quick-card-icon quick-card-icon-bulb">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0018 8a6 6 0 00-12 0 4.65 4.65 0 001.5 3.5 4.9 4.9 0 011.41 2.5"/></svg>
+              </span>
+              <span class="quick-card-label">分步出行</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
