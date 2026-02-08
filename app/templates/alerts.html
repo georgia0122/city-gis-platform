@@ -376,6 +376,8 @@
   </div>
 
   <script>
+    const CURRENT_CITY_KEY = 'geoweather_current_city';
+    const SEARCH_HISTORY_KEY = 'geoweather_search_history';
     let currentCity = '天津';
     let currentLat = 39.0851;
     let currentLng = 117.1994;
@@ -391,6 +393,70 @@
       currentLat = parseFloat(btn.dataset.lat);
       currentLng = parseFloat(btn.dataset.lng);
       loadWeatherData();
+    }
+
+    function getStoredCurrentCity() {
+      try {
+        const raw = localStorage.getItem(CURRENT_CITY_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        if (!data || typeof data.lat !== 'number' || typeof data.lng !== 'number') {
+          return null;
+        }
+        return data;
+      } catch (error) {
+        console.error('Failed to read current city:', error);
+        return null;
+      }
+    }
+
+    function getLatestSearchHistoryCity() {
+      try {
+        const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
+        if (!raw) return null;
+        const history = JSON.parse(raw);
+        if (!Array.isArray(history) || history.length === 0) return null;
+        const latest = history[0];
+        if (!latest || typeof latest.lat !== 'number' || typeof latest.lng !== 'number') {
+          return null;
+        }
+        return latest;
+      } catch (error) {
+        console.error('Failed to read search history:', error);
+        return null;
+      }
+    }
+
+    function addCurrentCityButton() {
+      const cityData = getStoredCurrentCity() || getLatestSearchHistoryCity();
+      const selector = document.querySelector('.city-selector');
+      if (!cityData || !selector) return;
+
+      const label = (cityData.city || cityData.name || '').trim();
+      if (!label) return;
+
+      const existing = Array.from(selector.querySelectorAll('.city-btn')).some(btn => {
+        const btnCity = (btn.dataset.city || btn.textContent || '').replace('(当前)', '').trim();
+        const btnLat = parseFloat(btn.dataset.lat);
+        const btnLng = parseFloat(btn.dataset.lng);
+        if (btnCity && btnCity === label) return true;
+        if (!Number.isNaN(btnLat) && !Number.isNaN(btnLng)) {
+          return Math.abs(btnLat - cityData.lat) < 0.0001 && Math.abs(btnLng - cityData.lng) < 0.0001;
+        }
+        return false;
+      });
+
+      if (existing) return;
+
+      const btn = document.createElement('button');
+      btn.className = 'city-btn';
+      btn.dataset.city = label;
+      btn.dataset.lat = cityData.lat;
+      btn.dataset.lng = cityData.lng;
+      btn.textContent = `${label} (当前)`;
+      btn.onclick = function() { selectCity(btn); };
+
+      selector.insertBefore(btn, selector.firstChild);
     }
 
     // 加载天气数据
@@ -788,6 +854,7 @@
 
     // 页面加载时初始化
     window.onload = function() {
+      addCurrentCityButton();
       loadWeatherData();
     };
   </script>

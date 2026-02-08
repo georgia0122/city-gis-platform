@@ -13,6 +13,7 @@ const searchLoading = document.getElementById("searchLoading");
 
 // ========== 搜索历史功能 ==========
 const SEARCH_HISTORY_KEY = 'geoweather_search_history';
+const CURRENT_CITY_KEY = 'geoweather_current_city';
 const MAX_HISTORY_ITEMS = 10;
 
 // 获取搜索历史
@@ -56,6 +57,24 @@ function saveToSearchHistory(place) {
     localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history));
   } catch (error) {
     console.error('Failed to save search history:', error);
+  }
+}
+
+function saveCurrentCity(place) {
+  try {
+    if (!place || typeof place.lat !== 'number' || typeof place.lng !== 'number') {
+      return;
+    }
+    const currentCity = {
+      name: place.name || '',
+      city: place.city || '',
+      lat: place.lat,
+      lng: place.lng,
+      timestamp: Date.now()
+    };
+    localStorage.setItem(CURRENT_CITY_KEY, JSON.stringify(currentCity));
+  } catch (error) {
+    console.error('Failed to save current city:', error);
   }
 }
 
@@ -231,6 +250,7 @@ async function selectPlace(p) {
     
     // 保存到搜索历史
     saveToSearchHistory(p);
+    saveCurrentCity(p);
 
     if (map) {
       map.setView([p.lat, p.lng], 13);
