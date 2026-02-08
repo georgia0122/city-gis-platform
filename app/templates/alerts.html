@@ -459,6 +459,36 @@
       selector.insertBefore(btn, selector.firstChild);
     }
 
+    function initCurrentCitySelection() {
+      const cityData = getStoredCurrentCity() || getLatestSearchHistoryCity();
+      if (!cityData) return;
+
+      const buttons = Array.from(document.querySelectorAll('.city-btn'));
+      if (buttons.length === 0) return;
+
+      let match = null;
+      const label = (cityData.city || cityData.name || '').trim();
+
+      buttons.forEach(btn => {
+        const btnCity = (btn.dataset.city || btn.textContent || '').replace('(当前)', '').trim();
+        const btnLat = parseFloat(btn.dataset.lat);
+        const btnLng = parseFloat(btn.dataset.lng);
+        if (!match && label && btnCity === label) {
+          match = btn;
+          return;
+        }
+        if (!match && !Number.isNaN(btnLat) && !Number.isNaN(btnLng)) {
+          if (Math.abs(btnLat - cityData.lat) < 0.0001 && Math.abs(btnLng - cityData.lng) < 0.0001) {
+            match = btn;
+          }
+        }
+      });
+
+      if (match) {
+        selectCity(match);
+      }
+    }
+
     // 加载天气数据
     async function loadWeatherData() {
       try {
@@ -855,6 +885,7 @@
     // 页面加载时初始化
     window.onload = function() {
       addCurrentCityButton();
+      initCurrentCitySelection();
       loadWeatherData();
     };
   </script>
