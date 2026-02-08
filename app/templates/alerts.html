@@ -150,10 +150,18 @@
       align-items: center;
       gap: 10px;
     }
+    .ai-brief-actions {
+      margin-left: auto;
+      display: flex;
+      gap: 8px;
+    }
     .ai-brief-content {
       color: #1f2937;
       line-height: 1.8;
       font-size: 15px;
+    }
+    .ai-brief.collapsed .ai-brief-content {
+      display: none;
     }
     .refresh-btn {
       padding: 10px 20px;
@@ -171,6 +179,20 @@
     .refresh-btn:disabled {
       background: #9ca3af;
       cursor: not-allowed;
+    }
+    .ai-brief-toggle {
+      padding: 10px 16px;
+      background: white;
+      color: #4c1d95;
+      border: 1px solid #c7d2fe;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+    .ai-brief-toggle:hover {
+      background: #eef2ff;
+      border-color: #a5b4fc;
     }
   </style>
 </head>
@@ -220,7 +242,10 @@
     <div class="ai-brief" id="aiBrief">
       <div class="ai-brief-title">
         🤖 AI 今日气象简报
-        <button class="refresh-btn" id="refreshBrief" onclick="refreshAIBrief()">🔄 刷新</button>
+        <div class="ai-brief-actions">
+          <button class="refresh-btn" id="refreshBrief" onclick="refreshAIBrief()">🔄 刷新</button>
+          <button class="ai-brief-toggle" id="toggleBrief" onclick="toggleAIBrief()" aria-expanded="true">收起</button>
+        </div>
       </div>
       <div class="ai-brief-content" id="briefContent">
         <div class="loading">正在加载 AI 分析...</div>
@@ -880,6 +905,16 @@
       } finally {
         btn.disabled = false;
       }
+    }
+
+    function toggleAIBrief() {
+      const brief = document.getElementById('aiBrief');
+      const toggleBtn = document.getElementById('toggleBrief');
+      if (!brief || !toggleBtn) return;
+
+      const isCollapsed = brief.classList.toggle('collapsed');
+      toggleBtn.textContent = isCollapsed ? '展开' : '收起';
+      toggleBtn.setAttribute('aria-expanded', String(!isCollapsed));
     }
 
     // 页面加载时初始化
