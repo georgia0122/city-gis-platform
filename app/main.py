@@ -126,6 +126,15 @@ async def register(user_in: UserCreate):
         "storage_used_mb": 0.5,
         "storage_total_mb": 100
     }
+    # 初始化监测城市列表（默认为常见城市）
+    user_dict["monitored_cities"] = [
+        {"id": "p1", "name": "天津", "lat": 39.0851, "lng": 117.1994},
+        {"id": "p4", "name": "北京", "lat": 39.9042, "lng": 116.4074},
+        {"id": "p5", "name": "上海", "lat": 31.2304, "lng": 121.4737},
+        {"id": "p6", "name": "广州", "lat": 23.1291, "lng": 113.2644},
+        {"id": "p7", "name": "深圳", "lat": 22.5431, "lng": 114.0579},
+        {"id": "p8", "name": "成都", "lat": 30.5728, "lng": 104.0668}
+    ]
 
     users_db[user_in.username] = user_dict
     save_users(users_db)
@@ -524,6 +533,108 @@ def search_places(q: str = ""):
         if q_lower in p["name"].lower() or q_lower in p.get("city", "").lower()
     ]
     return results
+
+
+@app.get("/api/monitored-cities")
+async def get_monitored_cities(request: Request):
+    """获取用户监测的城市列表"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    
+    user_data = users_db.get(user.username)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    # 如果用户没有监测城市列表，初始化默认列表
+    if "monitored_cities" not in user_data:
+        user_data["monitored_cities"] = [
+            {"id": "p1", "name": "天津", "lat": 39.0851, "lng": 117.1994},
+            {"id": "p4", "name": "北京", "lat": 39.9042, "lng": 116.4074},
+            {"id": "p5", "name": "上海", "lat": 31.2304, "lng": 121.4737},
+            {"id": "p6", "name": "广州", "lat": 23.1291, "lng": 113.2644},
+            {"id": "p7", "name": "深圳", "lat": 22.5431, "lng": 114.0579},
+            {"id": "p8", "name": "成都", "lat": 30.5728, "lng": 104.0668}
+        ]
+        users_db[user.username] = user_data
+        save_users(users_db)
+    
+    return user_data["monitored_cities"]
+
+
+@app.post("/api/monitored-cities")
+async def add_monitored_city(
+    request: Request,
+    city: dict = Body(...)
+):
+    """添加监测城市"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    
+    user_data = users_db.get(user.username)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    # 确保监测城市列表存在
+    if "monitored_cities" not in user_data:
+        user_data["monitored_cities"] = []
+    
+    # 检查是否已存在（基于坐标）
+    for existing_city in user_data["monitored_cities"]:
+        if (abs(existing_city["lat"] - city["lat"]) < 0.001 and 
+            abs(existing_city["lng"] - city["lng"]) < 0.001):
+            return {"message": "该城市已在监测列表中"}
+    
+    # 限制最多20个城市
+    if len(user_data["monitored_cities"]) >= 20:
+        raise HTTPException(status_code=400, detail="监测城市数量已达上限（20个）")
+    
+    # 添加城市
+    user_data["monitored_cities"].append({
+        "id": city.get("id", f"custom_{len(user_data['monitored_cities'])}"),
+        "name": city["name"],
+        "lat": city["lat"],
+        "lng": city["lng"]
+    })
+    
+    users_db[user.username] = user_data
+    save_users(users_db)
+    
+    return {"message": "城市添加成功", "cities": user_data["monitored_cities"]}
+
+
+@app.delete("/api/monitored-cities/{city_id}")
+async def remove_monitored_city(
+    request: Request,
+    city_id: str
+):
+    """删除监测城市"""
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    
+    user_data = users_db.get(user.username)
+    if not user_data:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    
+    if "monitored_cities" not in user_data:
+        user_data["monitored_cities"] = []
+    
+    # 过滤掉要删除的城市
+    original_count = len(user_data["monitored_cities"])
+    user_data["monitored_cities"] = [
+        city for city in user_data["monitored_cities"]
+        if city["id"] != city_id
+    ]
+    
+    if len(user_data["monitored_cities"]) == original_count:
+        raise HTTPException(status_code=404, detail="城市不存在")
+    
+    users_db[user.username] = user_data
+    save_users(users_db)
+    
+    return {"message": "城市删除成功", "cities": user_data["monitored_cities"]}
 
 
 @app.get("/api/alerts")

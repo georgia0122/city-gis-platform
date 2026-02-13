@@ -50,6 +50,44 @@ body { margin: 0; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Robot
 .chart { width: 100%; height: 320px; }
 .advice { color: #222; line-height: 1.55; white-space: pre-line; }
 
+/* ========== 搜索历史样式 ========== */
+#searchResults {
+  border-radius: 4px;
+}
+
+#searchResults .search-result-item {
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+#searchResults::-webkit-scrollbar {
+  width: 6px;
+}
+
+#searchResults::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+#searchResults::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+#searchResults::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
 /* ========== AI 智能助手：双栏 + 紫蓝配色 ========== */
 
 .chat-card {
