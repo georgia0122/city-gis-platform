@@ -1,0 +1,236 @@
+/* 
+ * 文件分析功能扩展样式
+ * 与 style.css 配合使用
+ */
+
+/* ========== 分析按钮加强样式 ========== */
+#analyzeBtn {
+    background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+#analyzeBtn:hover {
+    background: linear-gradient(135deg, #c4b5fd 0%, #a78bfa 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+}
+
+#analyzeBtn:active {
+    transform: translateY(0);
+}
+
+#analyzeBtn:disabled {
+    background: #d1d5db;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+
+/* ========== 文件预览卡片增强 ========== */
+.file-preview-item:hover {
+    box-shadow: 0 2px 8px rgba(124, 58, 237, 0.2);
+    border-color: #a78bfa;
+    transition: all 0.2s ease;
+}
+
+.file-preview-item.uploading {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.file-preview-item.error {
+    background: #fee2e2;
+    border-color: #fecaca;
+}
+
+/* ========== 分析进度条 ========== */
+.analysis-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: #f3f4f6;
+    border-radius: 8px;
+    margin-bottom: 8px;
+}
+
+.analysis-progress-bar {
+    flex: 1;
+    height: 4px;
+    background: #e5e7eb;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.analysis-progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #8b5cf6 0%, #a78bfa 100%);
+    width: 0%;
+    animation: progress-animation 0.3s ease;
+}
+
+@keyframes progress-animation {
+    0% { width: 0%; }
+    100% { width: var(--progress-width, 100%); }
+}
+
+.analysis-progress-text {
+    font-size: 12px;
+    color: #6b7280;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+/* ========== 文件类型图标 ========== */
+.file-type-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    font-weight: bold;
+    color: white;
+    font-size: 14px;
+    margin-right: 8px;
+    flex-shrink: 0;
+}
+
+.file-type-icon.image {
+    background: linear-gradient(135deg, #ec4899 0%, #db2777 100%);
+}
+
+.file-type-icon.pdf {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+}
+
+.file-type-icon.text {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+}
+
+.file-type-icon.word {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+}
+
+/* ========== 分析结果展示 ========== */
+.analysis-result {
+    padding: 12px;
+    background: #f9fafb;
+    border-left: 4px solid #8b5cf6;
+    border-radius: 4px;
+    margin-top: 8px;
+}
+
+.analysis-result-title {
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.analysis-result-content {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #4b5563;
+}
+
+.analysis-result-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.analysis-stat {
+    background: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid #e5e7eb;
+    font-size: 12px;
+}
+
+.analysis-stat-label {
+    color: #6b7280;
+    font-weight: 500;
+    margin-bottom: 2px;
+}
+
+.analysis-stat-value {
+    color: #8b5cf6;
+    font-weight: 700;
+    font-size: 16px;
+}
+
+/* ========== 响应式设计 ========== */
+@media (max-width: 768px) {
+    .file-preview-item {
+        max-width: 100%;
+    }
+    
+    .analysis-result-stats {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* ========== 动画效果 ========== */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.analyzing {
+    animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ========== 消息中的文件展示增强 ========== */
+.chat-bubble .file-preview-item {
+    padding: 6px 8px;
+    background: rgba(124, 58, 237, 0.05);
+    border: 1px solid rgba(124, 58, 237, 0.1);
+    margin-top: 4px;
+}
+
+.chat-bubble.assistant .file-preview-item {
+    background: rgba(59, 130, 246, 0.05);
+    border-color: rgba(59, 130, 246, 0.1);
+}
+
+/* ========== 文件分析工具栏 ========== */
+.file-analysis-toolbar {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    background: #f3f4f6;
+    border-radius: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.toolbar-btn {
+    padding: 6px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    background: white;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.toolbar-btn:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+}
+
+.toolbar-btn.active {
+    background: #8b5cf6;
+    color: white;
+    border-color: #8b5cf6;
+}
+

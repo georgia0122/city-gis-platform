@@ -1,15 +1,22 @@
 /**
  * AI 智能对话页专用脚本（独立页，无地图）
- * 支持：发送消息、清空、快捷卡片、侧栏收起/展开
+ * 支持：发送消息、清空、快捷卡片、侧栏收起/展开、文件上传
  */
 let chatHistory = [];
 let isChatSending = false;
+let attachedFiles = [];  // 存储待上传的文件
 
 const chatMessages = document.getElementById("chatMessages");
 const chatInput = document.getElementById("chatInput");
 const chatSendBtn = document.getElementById("chatSendBtn");
 const chatClearBtn = document.getElementById("chatClearBtn");
 const chatStatus = document.getElementById("chatStatus");
+const fileInput = document.getElementById("fileInput");
+const imageInput = document.getElementById("imageInput");
+const filePreview = document.getElementById("filePreview");
+const projectBtn = document.getElementById("projectBtn");
+const imageBtn = document.getElementById("imageBtn");
+const fileBtn = document.getElementById("fileBtn");
 
 function escapeHtml(text) {
   const div = document.createElement("div");
@@ -29,7 +36,7 @@ function formatTimeLabel() {
   return "今天 " + now.getHours().toString().padStart(2, "0") + ":" + now.getMinutes().toString().padStart(2, "0");
 }
 
-function createMessageEl(role, content) {
+function createMessageEl(role, content, files = []) {
   const wrapper = document.createElement("div");
   wrapper.className = `chat-message ${role}`;
 
@@ -43,6 +50,38 @@ function createMessageEl(role, content) {
   const bubble = document.createElement("div");
   bubble.className = `chat-bubble ${role}`;
   bubble.innerHTML = formatMessageContent(content);
+
+  // 如果有文件附件，显示文件预览
+  if (files && files.length > 0) {
+    files.forEach(file => {
+      const attachment = document.createElement('div');
+      attachment.className = 'chat-attachment';
+      
+      if (file.type && file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = document.createElement('img');
+          img.src = e.target.result;
+          img.className = 'chat-attachment-img';
+          img.onclick = function() { window.open(e.target.result, '_blank'); };
+          attachment.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        const icon = document.createElement('div');
+        icon.className = 'chat-attachment-icon';
+        icon.textContent = '📄';
+        attachment.appendChild(icon);
+        
+        const info = document.createElement('div');
+        info.className = 'chat-attachment-info';
+        info.innerHTML = `<div class="chat-attachment-name">${escapeHtml(file.name)}</div>`;
+        attachment.appendChild(info);
+      }
+      
+      bubble.appendChild(attachment);
+    });
+  }
 
   const time = document.createElement("div");
   time.className = "chat-time";
@@ -81,9 +120,9 @@ function scrollChatToBottom() {
   if (chatMessages) chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-function addUserMessage(content) {
+function addUserMessage(content, files = []) {
   chatHistory.push({ role: "user", content });
-  const el = createMessageEl("user", content);
+  const el = createMessageEl("user", content, files);
   chatMessages.appendChild(el);
   scrollChatToBottom();
 }
@@ -108,22 +147,32 @@ function hideTypingIndicator() {
 }
 
 async function sendChatMessage(message) {
-  if (!message || isChatSending) return;
+  if ((!message || message.trim() === '') && attachedFiles.length === 0) return;
+  if (isChatSending) return;
 
   isChatSending = true;
   chatSendBtn.disabled = true;
   chatInput.disabled = true;
   if (chatStatus) chatStatus.textContent = "思考中...";
 
-  addUserMessage(message);
+  // 显示用户消息（包含文件附件）
+  const userMessageContent = message || '(发送了文件)';
+  addUserMessage(userMessageContent, attachedFiles.map(f => f.file));
   showTypingIndicator();
 
   try {
-    const body = { message, history: chatHistory.slice(0, -1) };
+    const formData = new FormData();
+    formData.append('message', message || '请分析这些文件内容');
+    formData.append('history', JSON.stringify(chatHistory.slice(0, -1)));
+
+    // 添加文件到 FormData
+    for (let fileObj of attachedFiles) {
+      formData.append('files', fileObj.file);
+    }
+
     const resp = await fetch("/api/chat", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: formData,
     });
     const data = await resp.json();
     hideTypingIndicator();
@@ -133,6 +182,11 @@ async function sendChatMessage(message) {
     } else {
       addAssistantMessage(data.reply);
     }
+
+    // 清空已发送的文件
+    attachedFiles = [];
+    filePreview.innerHTML = '';
+    filePreview.classList.remove('has-files');
 
     if (chatStatus) chatStatus.textContent = "随时为您解答各种问题";
   } catch (err) {
@@ -151,7 +205,7 @@ async function sendChatMessage(message) {
 if (chatSendBtn) {
   chatSendBtn.addEventListener("click", function () {
     const msg = chatInput.value.trim();
-    if (msg) {
+    if (msg || attachedFiles.length > 0) {
       chatInput.value = "";
       sendChatMessage(msg);
     }
@@ -163,7 +217,7 @@ if (chatInput) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       const msg = chatInput.value.trim();
-      if (msg) {
+      if (msg || attachedFiles.length > 0) {
         chatInput.value = "";
         sendChatMessage(msg);
       }
@@ -216,4 +270,118 @@ if (chatSidebarToggle && chatCard) {
 
 if (chatSidebarExpandBtn && chatCard) {
   chatSidebarExpandBtn.addEventListener("click", toggleChatSidebar);
+}
+// ========== 文件上传功能 ==========
+
+// 文件大小格式化
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// 判断是否为图片
+function isImageFile(file) {
+  return file.type.startsWith('image/');
+}
+
+// 添加文件到预览区
+function addFileToPreview(file) {
+  const item = document.createElement('div');
+  item.className = 'file-preview-item';
+  item.dataset.fileId = Date.now() + '_' + Math.random();
+
+  if (isImageFile(file)) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const img = document.createElement('img');
+      img.src = e.target.result;
+      img.className = 'file-preview-img';
+      item.insertBefore(img, item.firstChild);
+    };
+    reader.readAsDataURL(file);
+  } else {
+    const icon = document.createElement('div');
+    icon.className = 'file-preview-icon';
+    icon.textContent = '📄';
+    item.appendChild(icon);
+  }
+
+  const info = document.createElement('div');
+  info.className = 'file-preview-info';
+  info.innerHTML = `
+    <div class="file-preview-name">${escapeHtml(file.name)}</div>
+    <div class="file-preview-size">${formatFileSize(file.size)}</div>
+  `;
+  item.appendChild(info);
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'file-preview-remove';
+  removeBtn.textContent = '×';
+  removeBtn.onclick = function() {
+    const fileId = item.dataset.fileId;
+    attachedFiles = attachedFiles.filter(f => f.id !== fileId);
+    item.remove();
+    if (attachedFiles.length === 0) {
+      filePreview.classList.remove('has-files');
+    }
+  };
+  item.appendChild(removeBtn);
+
+  filePreview.appendChild(item);
+  filePreview.classList.add('has-files');
+  
+  return item.dataset.fileId;
+}
+
+// 处理文件选择
+function handleFileSelect(files) {
+  for (let file of files) {
+    // 限制文件大小 10MB
+    if (file.size > 10 * 1024 * 1024) {
+      alert(`文件 ${file.name} 超过 10MB 限制`);
+      continue;
+    }
+    
+    const fileId = addFileToPreview(file);
+    attachedFiles.push({ id: fileId, file: file });
+  }
+}
+
+// 按钮点击事件
+if (projectBtn) {
+  projectBtn.addEventListener('click', function() {
+    // 项目功能暂未实现
+    alert('项目功能开发中...');
+  });
+}
+
+if (imageBtn) {
+  imageBtn.addEventListener('click', function() {
+    imageInput.click();
+  });
+}
+
+if (fileBtn) {
+  fileBtn.addEventListener('click', function() {
+    fileInput.click();
+  });
+}
+
+if (imageInput) {
+  imageInput.addEventListener('change', function(e) {
+    if (e.target.files.length > 0) {
+      handleFileSelect(e.target.files);
+      e.target.value = '';
+    }
+  });
+}
+
+if (fileInput) {
+  fileInput.addEventListener('change', function(e) {
+    if (e.target.files.length > 0) {
+      handleFileSelect(e.target.files);
+      e.target.value = '';
+    }
+  });
 }

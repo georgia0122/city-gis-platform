@@ -50,44 +50,6 @@ body { margin: 0; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Robot
 .chart { width: 100%; height: 320px; }
 .advice { color: #222; line-height: 1.55; white-space: pre-line; }
 
-/* ========== 搜索历史样式 ========== */
-#searchResults {
-  border-radius: 4px;
-}
-
-#searchResults .search-result-item {
-  animation: fadeIn 0.2s ease-in-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-#searchResults::-webkit-scrollbar {
-  width: 6px;
-}
-
-#searchResults::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 3px;
-}
-
-#searchResults::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 3px;
-}
-
-#searchResults::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
-}
-
 /* ========== AI 智能助手：双栏 + 紫蓝配色 ========== */
 
 .chat-card {
@@ -648,4 +610,128 @@ body { margin: 0; font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Robot
 }
 .ai-float-btn:hover .ai-float-tooltip {
   opacity: 1;
+}
+/* ========== 文件预览区域 ========== */
+.file-preview-area {
+  display: none;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+.file-preview-area.has-files {
+  display: flex;
+}
+.file-preview-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  max-width: 280px;
+}
+.file-preview-img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.file-preview-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  color: white;
+  border-radius: 4px;
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.file-preview-info {
+  flex: 1;
+  min-width: 0;
+}
+.file-preview-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-preview-size {
+  font-size: 11px;
+  color: #64748b;
+}
+.file-preview-remove {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: #ef4444;
+  color: white;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background 0.2s;
+}
+.file-preview-remove:hover {
+  background: #dc2626;
+}
+
+/* ========== 消息中的文件附件显示 ========== */
+.chat-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: rgba(124, 58, 237, 0.1);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+  border-radius: 8px;
+  margin-top: 8px;
+  max-width: 100%;
+}
+.chat-attachment-img {
+  max-width: 200px;
+  max-height: 200px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+.chat-attachment-img:hover {
+  transform: scale(1.02);
+}
+.chat-attachment-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  color: white;
+  border-radius: 4px;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.chat-attachment-info {
+  flex: 1;
+  min-width: 0;
+}
+.chat-attachment-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

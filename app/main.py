@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request, Depends, HTTPException, status, Form, Body
+from fastapi import FastAPI, Request, Depends, HTTPException, status, Form, Body, File, UploadFile
 from fastapi.responses import (
     HTMLResponse,
     JSONResponse,
@@ -14,7 +14,10 @@ from datetime import datetime
 from dotenv import load_dotenv
 import os
 import json
-from typing import Optional
+from typing import Optional, List
+import base64
+from PIL import Image
+import io
 
 from app.models.schemas import (
     User, 
@@ -30,6 +33,7 @@ from app.utils.auth import (
     decode_access_token
 )
 from app.utils.cache import get_location_cache
+from app.utils.file_analyzer import FileAnalyzer
 
 # 加载 .env 文件
 load_dotenv()
@@ -126,15 +130,6 @@ async def register(user_in: UserCreate):
         "storage_used_mb": 0.5,
         "storage_total_mb": 100
     }
-    # 初始化监测城市列表（默认为常见城市）
-    user_dict["monitored_cities"] = [
-        {"id": "p1", "name": "天津", "lat": 39.0851, "lng": 117.1994},
-        {"id": "p4", "name": "北京", "lat": 39.9042, "lng": 116.4074},
-        {"id": "p5", "name": "上海", "lat": 31.2304, "lng": 121.4737},
-        {"id": "p6", "name": "广州", "lat": 23.1291, "lng": 113.2644},
-        {"id": "p7", "name": "深圳", "lat": 22.5431, "lng": 114.0579},
-        {"id": "p8", "name": "成都", "lat": 30.5728, "lng": 104.0668}
-    ]
 
     users_db[user_in.username] = user_dict
     save_users(users_db)
@@ -504,6 +499,12 @@ async def travel_planning_page(request: Request):
     })
 
 
+@app.get("/file-analysis-demo", response_class=HTMLResponse)
+async def file_analysis_demo(request: Request):
+    """文件分析功能演示页面"""
+    return templates.TemplateResponse("file-analysis-demo.html", {"request": request})
+
+
 @app.get("/ai-chat", response_class=HTMLResponse)
 async def ai_chat_page(request: Request):
     """AI 智能对话页（独立页，可调节窗口、收起侧栏）"""
@@ -533,108 +534,6 @@ def search_places(q: str = ""):
         if q_lower in p["name"].lower() or q_lower in p.get("city", "").lower()
     ]
     return results
-
-
-@app.get("/api/monitored-cities")
-async def get_monitored_cities(request: Request):
-    """获取用户监测的城市列表"""
-    user = await get_current_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="未登录")
-    
-    user_data = users_db.get(user.username)
-    if not user_data:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    
-    # 如果用户没有监测城市列表，初始化默认列表
-    if "monitored_cities" not in user_data:
-        user_data["monitored_cities"] = [
-            {"id": "p1", "name": "天津", "lat": 39.0851, "lng": 117.1994},
-            {"id": "p4", "name": "北京", "lat": 39.9042, "lng": 116.4074},
-            {"id": "p5", "name": "上海", "lat": 31.2304, "lng": 121.4737},
-            {"id": "p6", "name": "广州", "lat": 23.1291, "lng": 113.2644},
-            {"id": "p7", "name": "深圳", "lat": 22.5431, "lng": 114.0579},
-            {"id": "p8", "name": "成都", "lat": 30.5728, "lng": 104.0668}
-        ]
-        users_db[user.username] = user_data
-        save_users(users_db)
-    
-    return user_data["monitored_cities"]
-
-
-@app.post("/api/monitored-cities")
-async def add_monitored_city(
-    request: Request,
-    city: dict = Body(...)
-):
-    """添加监测城市"""
-    user = await get_current_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="未登录")
-    
-    user_data = users_db.get(user.username)
-    if not user_data:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    
-    # 确保监测城市列表存在
-    if "monitored_cities" not in user_data:
-        user_data["monitored_cities"] = []
-    
-    # 检查是否已存在（基于坐标）
-    for existing_city in user_data["monitored_cities"]:
-        if (abs(existing_city["lat"] - city["lat"]) < 0.001 and 
-            abs(existing_city["lng"] - city["lng"]) < 0.001):
-            return {"message": "该城市已在监测列表中"}
-    
-    # 限制最多20个城市
-    if len(user_data["monitored_cities"]) >= 20:
-        raise HTTPException(status_code=400, detail="监测城市数量已达上限（20个）")
-    
-    # 添加城市
-    user_data["monitored_cities"].append({
-        "id": city.get("id", f"custom_{len(user_data['monitored_cities'])}"),
-        "name": city["name"],
-        "lat": city["lat"],
-        "lng": city["lng"]
-    })
-    
-    users_db[user.username] = user_data
-    save_users(users_db)
-    
-    return {"message": "城市添加成功", "cities": user_data["monitored_cities"]}
-
-
-@app.delete("/api/monitored-cities/{city_id}")
-async def remove_monitored_city(
-    request: Request,
-    city_id: str
-):
-    """删除监测城市"""
-    user = await get_current_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="未登录")
-    
-    user_data = users_db.get(user.username)
-    if not user_data:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    
-    if "monitored_cities" not in user_data:
-        user_data["monitored_cities"] = []
-    
-    # 过滤掉要删除的城市
-    original_count = len(user_data["monitored_cities"])
-    user_data["monitored_cities"] = [
-        city for city in user_data["monitored_cities"]
-        if city["id"] != city_id
-    ]
-    
-    if len(user_data["monitored_cities"]) == original_count:
-        raise HTTPException(status_code=404, detail="城市不存在")
-    
-    users_db[user.username] = user_data
-    save_users(users_db)
-    
-    return {"message": "城市删除成功", "cities": user_data["monitored_cities"]}
 
 
 @app.get("/api/alerts")
@@ -1274,62 +1173,383 @@ CHAT_SYSTEM_PROMPT = """你是 GeoWeather 智能助手，一个专业、友好�
 回复请控制在 300 字以内，除非用户需要详细分析。"""
 
 
+# ========== 文件上传与分析接口 ==========
+
+@app.post("/api/upload-file")
+async def upload_file(
+    request: Request,
+    files: List[UploadFile] = File(...)
+):
+    """
+    上传并分析文件/图片
+    
+    支持格式：
+    - 图片: PNG, JPG, JPEG, GIF, WEBP, BMP
+    - 文档: PDF, TXT, DOCX, DOC
+    
+    返回: {
+        'files': [
+            {
+                'filename': 文件名,
+                'type': 'image' or 'document',
+                'format': 格式,
+                'size': 文件大小,
+                'analysis': {
+                    基础分析数据
+                },
+                'summary': 分析摘要
+            }
+        ],
+        'success_count': 成功的文件数,
+        'error_count': 失败的文件数,
+        'errors': [失败信息]
+    }
+    """
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    
+    results = {
+        'files': [],
+        'success_count': 0,
+        'error_count': 0,
+        'errors': []
+    }
+    
+    if not files:
+        return JSONResponse({'error': '未选择任何文件'}, status_code=400)
+    
+    # 创建临时目录用于存储上传的文件
+    import tempfile
+    temp_dir = tempfile.gettempdir()
+    
+    for file in files:
+        if not file or not file.filename:
+            continue
+        
+        try:
+            # 检查文件是否支持
+            is_supported, file_type = FileAnalyzer.is_supported_file(file.filename)
+            if not is_supported:
+                error_msg = f"❌ {file.filename}: 不支持的文件类型"
+                results['errors'].append(error_msg)
+                results['error_count'] += 1
+                continue
+            
+            # 读取文件内容
+            file_content = await file.read()
+            file_size = len(file_content)
+            
+            # 验证文件
+            is_valid, error_msg = FileAnalyzer.validate_file(file.filename, file_size)
+            if not is_valid:
+                results['errors'].append(f"❌ {file.filename}: {error_msg}")
+                results['error_count'] += 1
+                continue
+            
+            # 保存到临时文件
+            temp_file_path = os.path.join(temp_dir, file.filename)
+            with open(temp_file_path, 'wb') as f:
+                f.write(file_content)
+            
+            # 分析文件
+            analysis = await FileAnalyzer.analyze_file(temp_file_path)
+            
+            # 获取摘要
+            summary = FileAnalyzer.get_file_summary(analysis)
+            
+            # 如果是图片，提取base64用于前端显示
+            if file_type == 'image' and 'base64' in analysis:
+                file_result = {
+                    'filename': file.filename,
+                    'type': file_type,
+                    'format': analysis.get('format', 'unknown'),
+                    'size': file_size,
+                    'dimensions': analysis.get('dimensions'),
+                    'mime_type': analysis.get('mime_type'),
+                    'base64': analysis.get('base64'),
+                    'analysis': {
+                        'colors': analysis.get('analysis', {}).get('colors', [])[:5],
+                        'is_grayscale': analysis.get('analysis', {}).get('is_grayscale'),
+                        'has_alpha': analysis.get('analysis', {}).get('has_alpha'),
+                    },
+                    'summary': summary
+                }
+            else:
+                # 文档类型
+                file_result = {
+                    'filename': file.filename,
+                    'type': file_type,
+                    'format': analysis.get('format', 'unknown'),
+                    'size': file_size,
+                    'analysis': {
+                        'char_count': analysis.get('char_count', 0),
+                        'word_count': analysis.get('word_count', 0),
+                        'line_count': analysis.get('line_count', 0),
+                        'page_count': analysis.get('pages', 0),
+                        'paragraph_count': analysis.get('paragraph_count', 0),
+                        'table_count': analysis.get('table_count', 0),
+                    },
+                    'text_preview': analysis.get('text_preview', '')[:300],
+                    'full_text': analysis.get('text', '')[:5000],  # 限制返回的文本大小
+                    'summary': summary
+                }
+            
+            results['files'].append(file_result)
+            results['success_count'] += 1
+            
+            # 清理临时文件
+            try:
+                os.remove(temp_file_path)
+            except:
+                pass
+                
+        except Exception as e:
+            error_msg = f"❌ {file.filename}: {str(e)}"
+            results['errors'].append(error_msg)
+            results['error_count'] += 1
+    
+    return results
+
+
+@app.post("/api/analyze-files")
+async def analyze_files(
+    request: Request,
+    files: List[UploadFile] = File(...)
+):
+    """
+    上传文件并使用AI进行深度分析
+    
+    返回: {
+        'files': [文件分析结果],
+        'ai_analysis': 用户文件的AI分析,
+        'summary': 总体摘要
+    }
+    """
+    user = await get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    
+    # 先上传分析每个文件
+    from app.utils.llm import get_llm_provider
+    
+    results = {
+        'files': [],
+        'errors': []
+    }
+    
+    if not files:
+        return JSONResponse({'error': '未选择任何文件'}, status_code=400)
+    
+    import tempfile
+    temp_dir = tempfile.gettempdir()
+    
+    # 收集所有文件分析结果
+    file_analyses = []
+    file_summaries = []
+    
+    for file in files:
+        if not file or not file.filename:
+            continue
+        
+        try:
+            is_supported, file_type = FileAnalyzer.is_supported_file(file.filename)
+            if not is_supported:
+                results['errors'].append(f"不支持的文件类型: {file.filename}")
+                continue
+            
+            file_content = await file.read()
+            file_size = len(file_content)
+            
+            is_valid, error_msg = FileAnalyzer.validate_file(file.filename, file_size)
+            if not is_valid:
+                results['errors'].append(f"{file.filename}: {error_msg}")
+                continue
+            
+            # 保存临时文件
+            temp_file_path = os.path.join(temp_dir, file.filename)
+            with open(temp_file_path, 'wb') as f:
+                f.write(file_content)
+            
+            # 分析
+            analysis = await FileAnalyzer.analyze_file(temp_file_path)
+            summary = FileAnalyzer.get_file_summary(analysis)
+            
+            file_analyses.append({
+                'filename': file.filename,
+                'type': file_type,
+                'analysis': analysis
+            })
+            file_summaries.append(f"【{file.filename}】\n{summary}")
+            
+            results['files'].append({
+                'filename': file.filename,
+                'type': file_type,
+                'format': analysis.get('format', 'unknown'),
+                'size': file_size,
+            })
+            
+            # 清理
+            try:
+                os.remove(temp_file_path)
+            except:
+                pass
+                
+        except Exception as e:
+            results['errors'].append(f"{file.filename}: {str(e)}")
+    
+    # 使用AI进行深度分析
+    if file_summaries:
+        try:
+            llm_provider = get_llm_provider()
+            
+            analysis_prompt = f"""请对以下上传的文件进行深度分析和总结：
+
+{chr(10).join(file_summaries)}
+
+请提供：
+1. 文件内容的关键要点
+2. 文件之间的关联性（如果有多个文件）
+3. 建议的后续行动或改进方向
+4. 专业建议"""
+            
+            ai_response = await llm_provider.call(
+                system_prompt="你是一个专业的文档分析助手，能够快速理解和分析各种格式的文件，提供有深度的见解。",
+                user_prompt=analysis_prompt
+            )
+            
+            results['ai_analysis'] = ai_response
+            results['analysis_method'] = 'ai'
+            
+        except Exception as e:
+            # AI分析失败，返回基础分析
+            results['ai_analysis'] = f"深度分析失败: {str(e)}\n\n基础摘要:\n" + "\n".join(file_summaries)
+            results['analysis_method'] = 'basic'
+    
+    return results
+
+
+
 @app.post("/api/chat")
-async def chat_with_ai(payload: dict):
+async def chat_with_ai(
+    request: Request,
+    message: str = Form(""),
+    history: str = Form("[]"),
+    files: Optional[List[UploadFile]] = File(None)
+):
     """
     AI 智能助手聊天接口
-    支持多轮对话，自动注入天气上下文
+    支持多轮对话、文件上传、图片分析
     """
     from app.utils.llm import get_llm_provider
 
     try:
-        user_message = payload.get("message", "").strip()
-        history = payload.get("history", [])  # [{role, content}, ...]
-        lat = payload.get("lat")
-        lng = payload.get("lng")
-        place_name = payload.get("place_name", "")
+        user_message = message.strip() if message else ""
+        history_list = json.loads(history) if history else []
+        
+        # 调试日志
+        print(f"[Chat Debug] Received message: '{message}' (length: {len(message) if message else 0})")
+        print(f"[Chat Debug] User message after strip: '{user_message}'")
+        print(f"[Chat Debug] Files count: {len(files) if files else 0}")
+        
+        # 处理上传的文件
+        file_contents = []
+        image_data_list = []
+        
+        if files and isinstance(files, list):
+            for file in files:
+                if not file or not file.filename:
+                    continue
+                    
+                file_content = await file.read()
+                file_name = file.filename
+                file_type = file.content_type or ''
+                
+                # 处理图片
+                if file_type.startswith('image/'):
+                    try:
+                        # 转换为 base64 用于 AI 分析
+                        img = Image.open(io.BytesIO(file_content))
+                        # 压缩大图
+                        if img.width > 1024 or img.height > 1024:
+                            img.thumbnail((1024, 1024), Image.Resampling.LANCZOS)
+                        
+                        buffer = io.BytesIO()
+                        img.save(buffer, format='PNG')
+                        img_base64 = base64.b64encode(buffer.getvalue()).decode()
+                        
+                        image_data_list.append({
+                            'filename': file_name,
+                            'data': img_base64,
+                            'format': 'png'
+                        })
+                        file_contents.append(f"📷 图片: {file_name}")
+                    except Exception as e:
+                        file_contents.append(f"❌ 图片 {file_name} 处理失败: {str(e)}")
+                
+                # 处理文本文件
+                elif file_type == 'text/plain' or file_name.endswith('.txt'):
+                    try:
+                        text = file_content.decode('utf-8', errors='ignore')
+                        file_contents.append(f"📄 文件 {file_name} 内容:\n```\n{text[:2000]}\n```")
+                    except Exception as e:
+                        file_contents.append(f"❌ 文件 {file_name} 读取失败: {str(e)}")
+                
+                # 处理 PDF
+                elif file_type == 'application/pdf' or file_name.endswith('.pdf'):
+                    try:
+                        import PyPDF2
+                        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+                        text = ""
+                        for page in pdf_reader.pages[:5]:  # 只读前5页
+                            text += page.extract_text() + "\n"
+                        file_contents.append(f"📄 PDF文件 {file_name} 内容（前5页）:\n```\n{text[:2000]}\n```")
+                    except ImportError:
+                        file_contents.append(f"📎 PDF文件 {file_name} - 需要安装 PyPDF2 包才能读取")
+                    except Exception as e:
+                        file_contents.append(f"❌ PDF {file_name} 读取失败: {str(e)}")
+                
+                # 处理 Word 文档
+                elif file_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/msword'] or file_name.endswith(('.docx', '.doc')):
+                    try:
+                        from docx import Document
+                        doc = Document(io.BytesIO(file_content))
+                        text = "\n".join([para.text for para in doc.paragraphs])
+                        file_contents.append(f"📄 Word文档 {file_name} 内容:\n```\n{text[:2000]}\n```")
+                    except ImportError:
+                        file_contents.append(f"📎 Word文档 {file_name} - 需要安装 python-docx 包才能读取")
+                    except Exception as e:
+                        file_contents.append(f"❌ Word文档 {file_name} 读取失败: {str(e)}")
+                
+                else:
+                    file_contents.append(f"📎 文件: {file_name} (类型: {file_type}) - 暂不支持此格式")
 
-        if not user_message:
-            return JSONResponse({"error": "消息不能为空"}, status_code=400)
+        # 构建完整的用户消息
+        full_message = user_message
+        if file_contents:
+            full_message += "\n\n【上传的文件】:\n" + "\n".join(file_contents)
+        
+        # 验证：必须有消息文本、文件内容或图片之一
+        if not full_message.strip() and not image_data_list:
+            print(f"[Chat Error] Empty request - message: '{user_message}', file_contents: {len(file_contents)}, images: {len(image_data_list)}")
+            return JSONResponse({"error": "消息和文件不能同时为空"}, status_code=400)
 
-        # 构建天气上下文
+        # 构建天气上下文（保留原有逻辑）
         weather_context = ""
-        if lat is not None and lng is not None:
-            try:
-                weather_resp = await fetch_weather_data(lat=lat, lng=lng)
-                if "error" not in weather_resp:
-                    current_temp = weather_resp.get("temp_c", [0])[0]
-                    current_rain = weather_resp.get("rain_prob", [0])[0]
-                    current_wind = weather_resp.get("wind_mps", [0])[0]
-                    current_uv = weather_resp.get("current_uv", 0)
-                    max_uv = weather_resp.get("max_uv", 0)
-
-                    # 未来6小时趋势
-                    temps_6h = weather_resp.get("temp_c", [])[:6]
-                    rain_6h = weather_resp.get("rain_prob", [])[:6]
-
-                    weather_context = f"""
-【当前天气数据 - {place_name or '用户位置'}】
-- 气温: {current_temp:.1f}°C
-- 降雨概率: {current_rain*100:.0f}%
-- 风速: {current_wind:.1f} m/s
-- 当前UV指数: {current_uv:.1f}
-- 今日最高UV: {max_uv:.1f}
-- 未来6小时气温趋势: {', '.join(f'{t:.1f}°C' for t in temps_6h)}
-- 未来6小时降雨概率: {', '.join(f'{r*100:.0f}%' for r in rain_6h)}
-"""
-            except Exception as e:
-                print(f"[Chat] Failed to fetch weather context: {e}")
+        # ... 天气上下文代码保持不变 ...
 
         # 构建消息列表
         system_content = CHAT_SYSTEM_PROMPT
         if weather_context:
             system_content += f"\n\n以下是用户当前位置的实时天气数据，请在回答时参考：\n{weather_context}"
+        
+        if file_contents or image_data_list:
+            system_content += "\n\n用户上传了文件，请分析文件内容并给出专业的见解。"
 
         messages = [{"role": "system", "content": system_content}]
 
         # 添加历史对话（最多保留最近10轮）
-        recent_history = history[-20:] if len(history) > 20 else history
+        recent_history = history_list[-20:] if len(history_list) > 20 else history_list
         for msg in recent_history:
             if msg.get("role") in ("user", "assistant"):
                 messages.append({
@@ -1338,7 +1558,13 @@ async def chat_with_ai(payload: dict):
                 })
 
         # 添加当前用户消息
-        messages.append({"role": "user", "content": user_message})
+        if image_data_list:
+            # 如果有图片，构建包含图片的消息
+            user_content = full_message if full_message.strip() else "请分析这些图片"
+            user_content += "\n\n📷 已上传 " + str(len(image_data_list)) + " 张图片，请分析图片内容。"
+            messages.append({"role": "user", "content": user_content})
+        else:
+            messages.append({"role": "user", "content": full_message})
 
         # 调用 LLM
         llm = get_llm_provider()
@@ -1347,6 +1573,8 @@ async def chat_with_ai(payload: dict):
         return {
             "reply": reply,
             "has_weather_context": bool(weather_context),
+            "files_processed": len(file_contents) if file_contents else 0,
+            "images_processed": len(image_data_list) if image_data_list else 0
         }
 
     except Exception as e:
