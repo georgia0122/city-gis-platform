@@ -1,31 +1,23 @@
 /**
  * 文件分析功能扩展脚本
  * 提供文件上传、预览和深度AI分析功能
+ * 
+ * 不依赖chat.js中的函数，完全独立
  */
 
-// 文件分析相关的全局变量
-let fileAnalysisQueue = [];
 let isAnalyzing = false;
-
-/**
- * 打开文件分析面板
- */
-function openFileAnalysisPanel() {
-    // 如果没有文件，先选择文件
-    if (attachedFiles.length === 0) {
-        fileInput.click();
-        return;
-    }
-    
-    // 触发深度分析
-    analyzeAttachedFilesAI();
-}
 
 /**
  * 深度分析已上传的文件
  */
 async function analyzeAttachedFilesAI() {
-    if (attachedFiles.length === 0) {
+    // 从全局作用域获取必要的变量
+    if (typeof window.attachedFiles === 'undefined' || !window.attachedFiles) {
+        alert('请先上传文件');
+        return;
+    }
+    
+    if (window.attachedFiles.length === 0) {
         alert('请先上传文件');
         return;
     }
@@ -36,19 +28,24 @@ async function analyzeAttachedFilesAI() {
     }
     
     isAnalyzing = true;
-    chatStatus.textContent = '🔍 深度分析中...';
+    const chatStatus = document.getElementById('chatStatus');
+    if (chatStatus) chatStatus.textContent = '🔍 深度分析中...';
     
     try {
         const formData = new FormData();
         
         // 添加所有附加的文件
-        for (let fileObj of attachedFiles) {
+        for (let fileObj of window.attachedFiles) {
             formData.append('files', fileObj.file);
         }
         
         // 显示分析开始提示
-        addAssistantMessage('📊 正在分析您上传的文件，请稍候...');
-        showTypingIndicator();
+        if (typeof window.addAssistantMessage === 'function') {
+            window.addAssistantMessage('📊 正在分析您上传的文件，请稍候...');
+        }
+        if (typeof window.showTypingIndicator === 'function') {
+            window.showTypingIndicator();
+        }
         
         const resp = await fetch('/api/analyze-files', {
             method: 'POST',
@@ -56,7 +53,10 @@ async function analyzeAttachedFilesAI() {
         });
         
         const data = await resp.json();
-        hideTypingIndicator();
+        
+        if (typeof window.hideTypingIndicator === 'function') {
+            window.hideTypingIndicator();
+        }
         
         if (resp.ok) {
             // 显示文件分析摘要
@@ -82,12 +82,21 @@ async function analyzeAttachedFilesAI() {
                 summary += '**AI 深度分析：**\n' + data.ai_analysis;
             }
             
-            addAssistantMessage(summary);
+            if (typeof window.addAssistantMessage === 'function') {
+                window.addAssistantMessage(summary);
+            }
             
             // 清空附加文件
-            attachedFiles = [];
-            filePreview.innerHTML = '';
-            filePreview.classList.remove('has-files');
+            if (window.attachedFiles) {
+                window.attachedFiles.length = 0; // 原地清空数组，保持引用一致
+            }
+            // window.attachedFiles = []; // 避免创建新引用
+            
+            const filePreview = document.getElementById('filePreview');
+            if (filePreview) {
+                filePreview.innerHTML = '';
+                filePreview.classList.remove('has-files');
+            }
             
             if (chatStatus) {
                 chatStatus.textContent = '✅ 分析完成';
@@ -96,13 +105,25 @@ async function analyzeAttachedFilesAI() {
                 }, 2000);
             }
         } else {
-            addAssistantMessage('❌ 分析失败: ' + (data.error || '未知错误'));
+            const errorMsg = '❌ 分析失败: ' + (data.error || '未知错误');
+            if (typeof window.addAssistantMessage === 'function') {
+                window.addAssistantMessage(errorMsg);
+            } else {
+                alert(errorMsg);
+            }
         }
     } catch (err) {
         console.error('Analysis error:', err);
-        hideTypingIndicator();
-        addAssistantMessage('❌ 分析过程出错: ' + err.message);
-        chatStatus.textContent = '❌ 分析失败';
+        if (typeof window.hideTypingIndicator === 'function') {
+            window.hideTypingIndicator();
+        }
+        const errMsg = '❌ 分析过程出错: ' + err.message;
+        if (typeof window.addAssistantMessage === 'function') {
+            window.addAssistantMessage(errMsg);
+        } else {
+            alert(errMsg);
+        }
+        if (chatStatus) chatStatus.textContent = '❌ 分析失败';
     } finally {
         isAnalyzing = false;
     }
@@ -167,46 +188,26 @@ function showFileAnalysisDetails(fileAnalysis) {
         }
     }
     
-    addAssistantMessage(details);
+    if (typeof window.addAssistantMessage === 'function') {
+        window.addAssistantMessage(details);
+    }
 }
 
-/**
- * 增强的文件选择处理
- */
-function enhancedHandleFileSelect(files) {
-    for (let file of files) {
-        // 限制文件大小 10MB
-        if (file.size > 10 * 1024 * 1024) {
-            alert(`文件 ${file.name} 超过 10MB 限制`);
-            continue;
-        }
-        
-        const fileId = addFileToPreview(file);
-        attachedFiles.push({ 
-            id: fileId, 
-            file: file,
-            timestamp: Date.now()
-        });
-    }
+// 初始化函数 - 在DOM加载完成后执行
+function initFileAnalysis() {
+    // 暴露全局接口供HTML调用
+    window.fileAnalysis = {
+        analyzeFiles: analyzeAttachedFilesAI,
+        quickAnalyze: quickAnalyzeFile,
+        showDetails: showFileAnalysisDetails
+    };
     
-    // 显示提示信息
-    if (attachedFiles.length > 0) {
-        const tipMessage = `📎 已选择 ${attachedFiles.length} 个文件，可点击"分析"按钮进行AI深度分析`;
-        console.log(tipMessage);
-    }
+    console.log('✅ FileAnalysis module initialized');
 }
 
-// 导出函数供其他脚本使用
-window.fileAnalysis = {
-    openPanel: openFileAnalysisPanel,
-    analyzeFiles: analyzeAttachedFilesAI,
-    quickAnalyze: quickAnalyzeFile,
-    showDetails: showFileAnalysisDetails,
-    handleFileSelect: enhancedHandleFileSelect
-};
-
-// 如果原脚本也定义了handleFileSelect，我们用增强版替换
-if (typeof window.originalHandleFileSelect === 'undefined') {
-    window.originalHandleFileSelect = handleFileSelect;
+// 在DOM加载完成或已完成时初始化
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initFileAnalysis);
+} else {
+    initFileAnalysis();
 }
-window.handleFileSelect = enhancedHandleFileSelect;
