@@ -1587,27 +1587,15 @@ async def chat_with_ai(
         )
 
 
-# ========== 对话历史管理 ==========
-import uuid
-
-CHAT_SESSIONS_FILE = "chat_sessions.json"
-
-
-def load_chat_sessions() -> dict:
-    """加载所有聊天会话"""
-    if os.path.exists(CHAT_SESSIONS_FILE):
-        try:
-            with open(CHAT_SESSIONS_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-
-def save_chat_sessions(sessions: dict):
-    """保存聊天会话"""
-    with open(CHAT_SESSIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(sessions, f, ensure_ascii=False, indent=2)
+# ========== 对话历史管理（SQLite） ==========
+from app.utils.chat_db import (
+    create_session as db_create_session,
+    get_user_sessions as db_get_user_sessions,
+    get_session as db_get_session,
+    add_messages as db_add_messages,
+    update_session_title as db_update_session_title,
+    delete_session as db_delete_session,
+)
 
 
 @app.get("/api/chat/sessions")
@@ -1617,22 +1605,8 @@ async def get_chat_sessions(request: Request):
     if not user:
         return JSONResponse({"error": "未登录"}, status_code=401)
 
-    all_sessions = load_chat_sessions()
-    user_sessions = all_sessions.get(user.username, {})
-
-    session_list = []
-    for sid, session in user_sessions.items():
-        session_list.append({
-            "id": sid,
-            "title": session.get("title", "新对话"),
-            "created_at": session.get("created_at", ""),
-            "updated_at": session.get("updated_at", ""),
-            "message_count": len(session.get("messages", []))
-        })
-
-    # 按更新时间倒序
-    session_list.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
-    return {"sessions": session_list}
+    sessions = db_get_user_sessions(user.username)
+    return {"sessions": sessions}
 
 
 @app.post("/api/chat/sessions")
@@ -1644,23 +1618,8 @@ async def create_chat_session(request: Request):
 
     body = await request.json()
     title = body.get("title", "新对话")
-
-    session_id = str(uuid.uuid4())[:8]
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    all_sessions = load_chat_sessions()
-    if user.username not in all_sessions:
-        all_sessions[user.username] = {}
-
-    all_sessions[user.username][session_id] = {
-        "title": title,
-        "created_at": now,
-        "updated_at": now,
-        "messages": []
-    }
-    save_chat_sessions(all_sessions)
-
-    return {"id": session_id, "title": title, "created_at": now}
+    result = db_create_session(user.username, title)
+    return result
 
 
 @app.get("/api/chat/sessions/{session_id}")
@@ -1670,20 +1629,10 @@ async def get_chat_session(session_id: str, request: Request):
     if not user:
         return JSONResponse({"error": "未登录"}, status_code=401)
 
-    all_sessions = load_chat_sessions()
-    user_sessions = all_sessions.get(user.username, {})
-
-    if session_id not in user_sessions:
+    session = db_get_session(user.username, session_id)
+    if not session:
         return JSONResponse({"error": "会话不存在"}, status_code=404)
-
-    session = user_sessions[session_id]
-    return {
-        "id": session_id,
-        "title": session.get("title", "新对话"),
-        "created_at": session.get("created_at", ""),
-        "updated_at": session.get("updated_at", ""),
-        "messages": session.get("messages", [])
-    }
+    return session
 
 
 @app.post("/api/chat/sessions/{session_id}/messages")
@@ -1695,44 +1644,8 @@ async def add_message_to_session(session_id: str, request: Request):
 
     body = await request.json()
     messages = body.get("messages", [])
-
-    all_sessions = load_chat_sessions()
-    if user.username not in all_sessions:
-        all_sessions[user.username] = {}
-
-    if session_id not in all_sessions[user.username]:
-        # 自动创建会话
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        all_sessions[user.username][session_id] = {
-            "title": "新对话",
-            "created_at": now,
-            "updated_at": now,
-            "messages": []
-        }
-
-    session = all_sessions[user.username][session_id]
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    for msg in messages:
-        session["messages"].append({
-            "role": msg.get("role", "user"),
-            "content": msg.get("content", ""),
-            "time": msg.get("time", now),
-            "attachments": msg.get("attachments", [])
-        })
-
-    # 自动用第一条用户消息作为标题
-    if session["title"] == "新对话":
-        for m in session["messages"]:
-            if m["role"] == "user" and m["content"].strip():
-                title_text = m["content"].strip()
-                session["title"] = title_text[:20] + ("..." if len(title_text) > 20 else "")
-                break
-
-    session["updated_at"] = now
-    save_chat_sessions(all_sessions)
-
-    return {"success": True, "title": session["title"]}
+    result = db_add_messages(user.username, session_id, messages)
+    return result
 
 
 @app.put("/api/chat/sessions/{session_id}")
@@ -1744,17 +1657,12 @@ async def update_chat_session(session_id: str, request: Request):
 
     body = await request.json()
     title = body.get("title")
+    if not title:
+        return JSONResponse({"error": "标题不能为空"}, status_code=400)
 
-    all_sessions = load_chat_sessions()
-    user_sessions = all_sessions.get(user.username, {})
-
-    if session_id not in user_sessions:
+    success = db_update_session_title(user.username, session_id, title)
+    if not success:
         return JSONResponse({"error": "会话不存在"}, status_code=404)
-
-    if title:
-        user_sessions[session_id]["title"] = title
-    save_chat_sessions(all_sessions)
-
     return {"success": True}
 
 
@@ -1765,11 +1673,5 @@ async def delete_chat_session(session_id: str, request: Request):
     if not user:
         return JSONResponse({"error": "未登录"}, status_code=401)
 
-    all_sessions = load_chat_sessions()
-    user_sessions = all_sessions.get(user.username, {})
-
-    if session_id in user_sessions:
-        del user_sessions[session_id]
-        save_chat_sessions(all_sessions)
-
+    db_delete_session(user.username, session_id)
     return {"success": True}
