@@ -51,11 +51,14 @@
                 <span>收起</span>
               </button>
             </div>
-            <div class="chat-sidebar-list">
-              <div class="chat-sidebar-item chat-sidebar-item-active" data-current="true">
-                <div class="chat-sidebar-item-title">当前对话</div>
-                <div class="chat-sidebar-item-time" id="chatSidebarCurrentTime">今天</div>
-              </div>
+            <div class="chat-sidebar-new">
+              <button type="button" class="chat-new-btn" id="newChatBtn" title="新建对话">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                <span>新建对话</span>
+              </button>
+            </div>
+            <div class="chat-sidebar-list" id="chatSessionList">
+              <div class="chat-sidebar-empty">加载中...</div>
             </div>
           </aside>
           <div class="chat-main">

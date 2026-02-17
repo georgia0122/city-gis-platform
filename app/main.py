@@ -1585,3 +1585,191 @@ async def chat_with_ai(
             {"error": f"聊天服务暂时不可用: {str(e)}"},
             status_code=500
         )
+
+
+# ========== 对话历史管理 ==========
+import uuid
+
+CHAT_SESSIONS_FILE = "chat_sessions.json"
+
+
+def load_chat_sessions() -> dict:
+    """加载所有聊天会话"""
+    if os.path.exists(CHAT_SESSIONS_FILE):
+        try:
+            with open(CHAT_SESSIONS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def save_chat_sessions(sessions: dict):
+    """保存聊天会话"""
+    with open(CHAT_SESSIONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(sessions, f, ensure_ascii=False, indent=2)
+
+
+@app.get("/api/chat/sessions")
+async def get_chat_sessions(request: Request):
+    """获取当前用户的所有会话列表（按时间倒序）"""
+    user = await get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+
+    all_sessions = load_chat_sessions()
+    user_sessions = all_sessions.get(user.username, {})
+
+    session_list = []
+    for sid, session in user_sessions.items():
+        session_list.append({
+            "id": sid,
+            "title": session.get("title", "新对话"),
+            "created_at": session.get("created_at", ""),
+            "updated_at": session.get("updated_at", ""),
+            "message_count": len(session.get("messages", []))
+        })
+
+    # 按更新时间倒序
+    session_list.sort(key=lambda x: x.get("updated_at", ""), reverse=True)
+    return {"sessions": session_list}
+
+
+@app.post("/api/chat/sessions")
+async def create_chat_session(request: Request):
+    """创建新会话"""
+    user = await get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+
+    body = await request.json()
+    title = body.get("title", "新对话")
+
+    session_id = str(uuid.uuid4())[:8]
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    all_sessions = load_chat_sessions()
+    if user.username not in all_sessions:
+        all_sessions[user.username] = {}
+
+    all_sessions[user.username][session_id] = {
+        "title": title,
+        "created_at": now,
+        "updated_at": now,
+        "messages": []
+    }
+    save_chat_sessions(all_sessions)
+
+    return {"id": session_id, "title": title, "created_at": now}
+
+
+@app.get("/api/chat/sessions/{session_id}")
+async def get_chat_session(session_id: str, request: Request):
+    """获取某个会话的全部消息"""
+    user = await get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+
+    all_sessions = load_chat_sessions()
+    user_sessions = all_sessions.get(user.username, {})
+
+    if session_id not in user_sessions:
+        return JSONResponse({"error": "会话不存在"}, status_code=404)
+
+    session = user_sessions[session_id]
+    return {
+        "id": session_id,
+        "title": session.get("title", "新对话"),
+        "created_at": session.get("created_at", ""),
+        "updated_at": session.get("updated_at", ""),
+        "messages": session.get("messages", [])
+    }
+
+
+@app.post("/api/chat/sessions/{session_id}/messages")
+async def add_message_to_session(session_id: str, request: Request):
+    """向会话添加消息（用户消息 + AI回复）"""
+    user = await get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+
+    body = await request.json()
+    messages = body.get("messages", [])
+
+    all_sessions = load_chat_sessions()
+    if user.username not in all_sessions:
+        all_sessions[user.username] = {}
+
+    if session_id not in all_sessions[user.username]:
+        # 自动创建会话
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        all_sessions[user.username][session_id] = {
+            "title": "新对话",
+            "created_at": now,
+            "updated_at": now,
+            "messages": []
+        }
+
+    session = all_sessions[user.username][session_id]
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    for msg in messages:
+        session["messages"].append({
+            "role": msg.get("role", "user"),
+            "content": msg.get("content", ""),
+            "time": msg.get("time", now),
+            "attachments": msg.get("attachments", [])
+        })
+
+    # 自动用第一条用户消息作为标题
+    if session["title"] == "新对话":
+        for m in session["messages"]:
+            if m["role"] == "user" and m["content"].strip():
+                title_text = m["content"].strip()
+                session["title"] = title_text[:20] + ("..." if len(title_text) > 20 else "")
+                break
+
+    session["updated_at"] = now
+    save_chat_sessions(all_sessions)
+
+    return {"success": True, "title": session["title"]}
+
+
+@app.put("/api/chat/sessions/{session_id}")
+async def update_chat_session(session_id: str, request: Request):
+    """更新会话标题"""
+    user = await get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+
+    body = await request.json()
+    title = body.get("title")
+
+    all_sessions = load_chat_sessions()
+    user_sessions = all_sessions.get(user.username, {})
+
+    if session_id not in user_sessions:
+        return JSONResponse({"error": "会话不存在"}, status_code=404)
+
+    if title:
+        user_sessions[session_id]["title"] = title
+    save_chat_sessions(all_sessions)
+
+    return {"success": True}
+
+
+@app.delete("/api/chat/sessions/{session_id}")
+async def delete_chat_session(session_id: str, request: Request):
+    """删除某个会话"""
+    user = await get_current_user(request)
+    if not user:
+        return JSONResponse({"error": "未登录"}, status_code=401)
+
+    all_sessions = load_chat_sessions()
+    user_sessions = all_sessions.get(user.username, {})
+
+    if session_id in user_sessions:
+        del user_sessions[session_id]
+        save_chat_sessions(all_sessions)
+
+    return {"success": True}
