@@ -4,6 +4,7 @@ var chatHistory = [];       // 当前对话的消息列表 (用于发送给后�
 var attachedFiles = [];     // 当前附件列表
 var isChatSending = false;  // 发送锁
 var currentSessionId = null; // 当前会话 ID
+var LOCATION_STORAGE_KEY = 'geoweather_current_city';
 
 window.attachedFiles = attachedFiles;
 
@@ -33,6 +34,27 @@ function escapeHtml(text) {
   var div = document.createElement('div');
   div.textContent = text;
   return div.innerHTML;
+}
+
+function getStoredLocation() {
+  try {
+    var raw = localStorage.getItem(LOCATION_STORAGE_KEY);
+    if (!raw) return null;
+    var data = JSON.parse(raw);
+    if (!data) return null;
+    var lat = typeof data.lat === 'number' ? data.lat : parseFloat(data.lat);
+    var lng = typeof data.lng === 'number' ? data.lng : parseFloat(data.lng);
+    if (!isFinite(lat) || !isFinite(lng)) return null;
+    return {
+      lat: lat,
+      lng: lng,
+      name: data.name || '',
+      city: data.city || ''
+    };
+  } catch (e) {
+    console.warn('Failed to read stored location:', e);
+    return null;
+  }
 }
 
 // 简单 Markdown → HTML
@@ -133,7 +155,7 @@ function addUserMessage(content, attachmentsList) {
   chatHistory.push({ role: 'user', content: content });
 
   // 保存到后端
-  saveMessageToSession('user', content, now.toISOString(), attSummary);
+  return saveMessageToSession('user', content, now.toISOString(), attSummary);
 }
 
 function addAssistantMessage(content) {
@@ -149,7 +171,7 @@ function addAssistantMessage(content) {
   chatHistory.push({ role: 'assistant', content: content });
 
   // 保存到后端
-  saveMessageToSession('assistant', content, now.toISOString(), []);
+  return saveMessageToSession('assistant', content, now.toISOString(), []);
 }
 
 // 全局暴露给 file-analysis.js
@@ -293,8 +315,9 @@ async function sendChatMessage(msg) {
   });
 
   // 显示用户消息
+  var userSavePromise = Promise.resolve();
   if (userText) {
-    addUserMessage(userText, attList);
+    userSavePromise = addUserMessage(userText, attList) || Promise.resolve();
   }
 
   showTypingIndicator();
@@ -304,6 +327,15 @@ async function sendChatMessage(msg) {
     var formData = new FormData();
     formData.append('message', userText);
     formData.append('history', JSON.stringify(chatHistory));
+
+    var storedLocation = getStoredLocation();
+    if (storedLocation) {
+      formData.append('lat', storedLocation.lat);
+      formData.append('lng', storedLocation.lng);
+      if (storedLocation.name || storedLocation.city) {
+        formData.append('city', storedLocation.name || storedLocation.city);
+      }
+    }
 
     for (var i = 0; i < attachedFiles.length; i++) {
       formData.append('files', attachedFiles[i].file);
@@ -317,10 +349,11 @@ async function sendChatMessage(msg) {
     var data = await resp.json();
     hideTypingIndicator();
 
+    var assistantSavePromise = Promise.resolve();
     if (data.error) {
-      addAssistantMessage('❌ ' + data.error);
+      assistantSavePromise = addAssistantMessage('❌ ' + data.error) || Promise.resolve();
     } else {
-      addAssistantMessage(data.reply);
+      assistantSavePromise = addAssistantMessage(data.reply) || Promise.resolve();
     }
 
     // 清空附件
@@ -333,7 +366,8 @@ async function sendChatMessage(msg) {
 
     if (chatStatus) chatStatus.textContent = '随时为您解答各种问题';
 
-    // 刷新侧边栏（标题可能更新了）
+    // 等待消息落库后再刷新侧边栏（避免首次加载为空）
+    await Promise.all([userSavePromise, assistantSavePromise]);
     loadSessionList();
 
   } catch (err) {
@@ -360,13 +394,18 @@ async function ensureSession() {
       credentials: 'include',
       body: JSON.stringify({ title: '新对话' })
     });
+    if (!resp.ok) {
+      throw new Error('Failed to create session: ' + resp.status);
+    }
     var data = await resp.json();
+    if (!data || !data.id) {
+      throw new Error('Invalid session response');
+    }
     currentSessionId = data.id;
     return currentSessionId;
   } catch (e) {
     console.error('Failed to create session:', e);
-    currentSessionId = 'local_' + Date.now();
-    return currentSessionId;
+    return null;
   }
 }
 
@@ -374,6 +413,7 @@ async function ensureSession() {
 async function saveMessageToSession(role, content, time, attachments) {
   try {
     var sid = await ensureSession();
+    if (!sid) return;
     await fetch('/api/chat/sessions/' + sid + '/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

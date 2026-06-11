@@ -1435,7 +1435,10 @@ async def chat_with_ai(
     request: Request,
     message: str = Form(""),
     history: str = Form("[]"),
-    files: Optional[List[UploadFile]] = File(None)
+    files: Optional[List[UploadFile]] = File(None),
+    lat: Optional[float] = Form(None),
+    lng: Optional[float] = Form(None),
+    city: Optional[str] = Form(None)
 ):
     """
     AI 智能助手聊天接口
@@ -1534,9 +1537,46 @@ async def chat_with_ai(
             print(f"[Chat Error] Empty request - message: '{user_message}', file_contents: {len(file_contents)}, images: {len(image_data_list)}")
             return JSONResponse({"error": "消息和文件不能同时为空"}, status_code=400)
 
-        # 构建天气上下文（保留原有逻辑）
+        # 构建天气上下文（来自地图选点的经纬度）
         weather_context = ""
-        # ... 天气上下文代码保持不变 ...
+        location_label = city or "地图选点"
+        if lat is not None and lng is not None:
+            try:
+                url = "https://api.open-meteo.com/v1/forecast"
+                params = {
+                    "latitude": lat,
+                    "longitude": lng,
+                    "current": "temperature_2m,precipitation,wind_speed_10m",
+                    "hourly": "precipitation_probability,uv_index",
+                    "timezone": "Asia/Shanghai",
+                    "forecast_days": 1
+                }
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(url, params=params, timeout=10.0)
+                    data = resp.json()
+
+                current = data.get("current", {})
+                hourly = data.get("hourly", {})
+                rain_probs = hourly.get("precipitation_probability", [])
+                uv_indices = hourly.get("uv_index", [])
+
+                current_rain_prob = rain_probs[0] if rain_probs else None
+                current_uv = uv_indices[0] if uv_indices else None
+
+                lines = [f"位置: {location_label} (lat {lat:.4f}, lng {lng:.4f})"]
+                if "temperature_2m" in current:
+                    lines.append(f"气温: {current.get('temperature_2m')}°C")
+                if current_rain_prob is not None:
+                    lines.append(f"降雨概率: {int(round(current_rain_prob))}%")
+                if "wind_speed_10m" in current:
+                    lines.append(f"风速: {current.get('wind_speed_10m')} m/s")
+                if current_uv is not None:
+                    lines.append(f"UV指数: {current_uv}")
+
+                weather_context = "\n".join(lines)
+            except Exception as e:
+                print(f"[Chat Weather] Failed to load weather context: {e}")
+                weather_context = f"位置: {location_label} (lat {lat:.4f}, lng {lng:.4f})"
 
         # 构建消息列表
         system_content = CHAT_SYSTEM_PROMPT
