@@ -383,6 +383,19 @@ async function loadPlacesAndInitMap() {
     });
   });
 
+  // 支持直接点击地图选点；页面提示的“在地图上选择位置”需要在这里实际触发天气查询。
+  map.on("click", async (event) => {
+    const { lat, lng } = event.latlng;
+    await selectPlace({
+      id: `map_${lat.toFixed(5)}_${lng.toFixed(5)}`,
+      name: "地图选点",
+      lat,
+      lng,
+      city: "",
+      country: ""
+    });
+  });
+
   updateChart([], [], [], [], []);
 }
 
